@@ -35,8 +35,108 @@ export interface CodexStatus {
   error: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Setup (first-run checklist)
+
+export interface SetupStatus {
+  homebrew: { installed: boolean; version: string | null }
+  codex: CodexStatus
+  /** null while unknown (e.g. Codex missing or not reachable). */
+  signedIn: boolean | null
+  accountLabel: string | null
+  /** How Termless would install Codex, if it can. */
+  codexInstallMethod: 'brew' | 'npm' | null
+}
+
+export type SetupActionResult = { ok: true } | { ok: false; message: string; cancelled?: boolean }
+
+// ---------------------------------------------------------------------------
+// Assistant
+
+/** How much a command could change the Mac, shown on the confirmation card. */
+export type CommandRisk = 'change' | 'install' | 'remove' | 'admin' | 'internet-script'
+
+export type TimelineItem =
+  | { kind: 'user'; id: string; text: string }
+  | { kind: 'agent'; id: string; text: string; streaming: boolean; final: boolean }
+  | {
+      kind: 'command'
+      id: string
+      command: string
+      status: 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined'
+      risk: CommandRisk
+      output: string | null
+      exitCode: number | null
+    }
+  | { kind: 'activity'; id: string; tool: string; summary: string; status: 'running' | 'done' | 'failed' }
+  | {
+      kind: 'question'
+      id: string
+      question: string
+      options: { label: string; description?: string }[]
+      allowOther: boolean
+      answer: string | null
+    }
+  | { kind: 'notice'; id: string; tone: 'info' | 'error'; text: string }
+
+export type AgentPhase = 'idle' | 'starting' | 'ready' | 'working' | 'error'
+
+export interface AgentState {
+  phase: AgentPhase
+  /** Plain-language explanation when phase is 'error'. */
+  error: string | null
+  model: string | null
+  timeline: TimelineItem[]
+  /** True while Termless is saving what it learned from a finished conversation. */
+  savingMemory: boolean
+}
+
+export type ApprovalDecision = 'accept' | 'decline'
+
+// ---------------------------------------------------------------------------
+// Memory
+
+export interface MemoryFact {
+  id: string
+  text: string
+  createdAt: string
+  source: 'agent' | 'summary'
+}
+
+export interface ActionRecord {
+  id: string
+  at: string
+  summary: string
+  undo: string | null
+}
+
+export interface MemorySnapshot {
+  facts: MemoryFact[]
+  actions: ActionRecord[]
+}
+
+export type Lang = 'en' | 'zh'
+
+// ---------------------------------------------------------------------------
+
 export interface TermlessApi {
   getInventory(): Promise<BrewInventory>
   getCodexStatus(): Promise<CodexStatus>
   openExternal(url: string): Promise<void>
+
+  getSetupStatus(): Promise<SetupStatus>
+  installCodex(lang: Lang): Promise<SetupActionResult>
+  signInToCodex(): Promise<SetupActionResult>
+
+  getAgentState(): Promise<AgentState>
+  onAgentState(listener: (state: AgentState) => void): () => void
+  sendMessage(text: string, lang: Lang): Promise<void>
+  respondToApproval(itemId: string, decision: ApprovalDecision): Promise<void>
+  answerQuestion(itemId: string, answer: string): Promise<void>
+  interrupt(): Promise<void>
+  newConversation(): Promise<void>
+
+  getMemory(): Promise<MemorySnapshot>
+  forgetFact(id: string): Promise<MemorySnapshot>
+  clearMemory(): Promise<MemorySnapshot>
 }

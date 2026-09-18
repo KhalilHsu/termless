@@ -7,7 +7,17 @@ import { ViewHeader } from './ViewHeader'
 
 type Filter = 'all' | 'formula' | 'cask' | 'updates'
 
-export function InstalledView({ state, onRetry }: { state: InventoryState; onRetry: () => void }) {
+export function InstalledView({
+  state,
+  onRetry,
+  onAsk,
+  assistantBusy
+}: {
+  state: InventoryState
+  onRetry: () => void
+  onAsk: (prompt: string) => void
+  assistantBusy: boolean
+}) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -151,7 +161,7 @@ export function InstalledView({ state, onRetry }: { state: InventoryState; onRet
 
         <section className="detail-pane">
           {selected ? (
-            <PackageDetail pkg={selected} onSelectName={selectByName} />
+            <PackageDetail pkg={selected} onSelectName={selectByName} onAsk={onAsk} assistantBusy={assistantBusy} />
           ) : (
             <div className="empty-state">
               <p>{t('installed.select')}</p>
@@ -176,8 +186,19 @@ function KindBadge({ pkg }: { pkg: InstalledPackage }) {
   return <span className={`badge badge-${pkg.kind}`}>{t(pkg.kind === 'formula' ? 'kind.formula' : 'kind.cask')}</span>
 }
 
-function PackageDetail({ pkg, onSelectName }: { pkg: InstalledPackage; onSelectName: (name: string) => void }) {
+function PackageDetail({
+  pkg,
+  onSelectName,
+  onAsk,
+  assistantBusy
+}: {
+  pkg: InstalledPackage
+  onSelectName: (name: string) => void
+  onAsk: (prompt: string) => void
+  assistantBusy: boolean
+}) {
   const { t } = useI18n()
+  const promptVars = { name: pkg.displayName, kind: t(pkg.kind === 'formula' ? 'kind.formula' : 'kind.cask'), id: pkg.name }
 
   return (
     <div className="detail" key={pkg.id}>
@@ -235,15 +256,18 @@ function PackageDetail({ pkg, onSelectName }: { pkg: InstalledPackage; onSelectN
       <DetailSection title={t('detail.actions')}>
         <div className="actions">
           {pkg.outdated && pkg.latestVersion && (
-            <button className="button button-primary" disabled>
+            <button className="button button-primary" disabled={assistantBusy} onClick={() => onAsk(t('prompt.upgrade', promptVars))}>
               {t('detail.upgrade', { version: pkg.latestVersion })}
             </button>
           )}
-          <button className="button" disabled>
+          <button className="button" disabled={assistantBusy} onClick={() => onAsk(t('prompt.uninstall', promptVars))}>
             {t('detail.uninstall')}
           </button>
+          <button className="button" disabled={assistantBusy} onClick={() => onAsk(t('prompt.useIt', promptVars))}>
+            {t('detail.useIt')}
+          </button>
         </div>
-        <p className="muted small">{t('detail.actionsSoon')}</p>
+        <p className="muted small">{t('detail.actionsHint')}</p>
         <CommandDisclosure
           command={pkg.outdated ? upgradeCommand(pkg) : uninstallCommand(pkg)}
         />

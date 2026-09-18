@@ -112,7 +112,7 @@
 - ✅ **只通过 CLI 调用**，不打开也不依赖它们的桌面客户端。
 - 登录一律走各 CLI 自己的官方流程（浏览器登录），App **永不接触 token**。
 - ✅ 用户没有可用的 AI 账号：直接告知无法使用并说明原因（本产品依赖 AI）。
-- ⚠️ CLI 自身会在 `~/.codex` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
+- ✅ 会话记录问题已解决：线程为 ephemeral，且 Termless 使用独立的 `CODEX_HOME`，不会出现在用户的 Codex 历史里。
 
 #### 10.2.1 订阅条款调研（2026-09-18）
 
@@ -149,14 +149,14 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 
 | 层 | 内容 | 注入方式 |
 |---|---|---|
-| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | 专用工作目录里的 `AGENTS.md`（Codex 默认读取），每次都注入 |
+| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | app-server 的 `developerInstructions`，每个新对话注入（实现见 `src/main/agent/instructions.ts`） |
 | 2. 当前环境 | 系统、芯片、shell、网络、已安装清单摘要 | 开会话时注入 |
 | 3. 长期记忆 | 用户偏好与习惯 | Agent 按需读取 |
 | 4. 操作日志 | 装过 / 改过什么、为什么、如何撤销 | Agent 按需读取 |
 | 5. 配方（Skills） | 常见任务的最佳做法，与「发现」Tab 共用 | 按需加载 |
 
-**App 自身暴露一个 MCP 服务**，与具体 Agent 无关：
-- `get_inventory()`、`recall(query)` / `remember(fact)`、`get_history()`、`show_card(question, options)`、`log_action(what, why, undo)`
+**App 向 Agent 提供自定义工具**（已实现为 Codex dynamic tools；将来接入其他 Agent 时可再包成 MCP 服务），与具体 Agent 无关：
+- `termless_get_inventory`、`termless_recall` / `termless_remember` / `termless_forget`、`termless_get_recent_actions`、`termless_ask_user`、`termless_log_action`
 - 记忆存在 App 里，切换 Agent 不丢失；UI 由 Agent 显式调用驱动，更稳定。
 - 会话结束时由 App 额外跑一次总结写入记忆；记忆对用户可见、可删除。
 
@@ -177,6 +177,18 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 
 ## 12. 进度
 
+- 2026-09-18（第二次）：**助手 Agent 核心链路完成**，已端到端实测。
+  - 通过 `codex app-server`（JSON-RPC）驱动 Codex，模型 `gpt-5.6-terra`、推理强度 low。
+  - 对话：流式回复、简易 Markdown、停止、新对话。
+  - 确认卡片：审批策略 `untrusted`，凡不是明显只读的命令 / 文件修改都先弹卡片；按风险分级（改动 / 安装 / 删除 / 管理员 / 网上脚本）配色；命令和输出默认折叠。批准后以用户权限执行（`danger-full-access`），以便 brew 安装能工作。
+  - 提问卡片：Agent 调用 `termless_ask_user` 弹出选项，也兼容 Codex 自带的 request_user_input。
+  - 注入内容（10.4 的第 1~4 层）：产品规则、这台 Mac 的环境（系统、芯片、Homebrew 概况、网络连通性）、长期记忆、最近的改动，通过 `developerInstructions` 在每个新对话开始时注入。
+  - 自定义工具（Codex dynamic tools，取代原计划的 MCP 服务）：`termless_get_inventory`、`termless_ask_user`、`termless_remember` / `recall` / `forget`、`termless_log_action`、`termless_get_recent_actions`。
+  - 长期记忆：存在 App 数据目录的 `memory.json`；对话中 Agent 主动记；点「新对话」或退出 App 时，另开只读线程总结对话提炼事实；「记忆」面板可查看、逐条删除、全部清空。
+  - 隔离：Termless 用独立的 `CODEX_HOME`，用户个人的 Codex 设置（全局 AGENTS.md、MCP、skills）不会混进来，也不会被改动；线程为 ephemeral，不写 Codex 历史。
+  - 首次启动引导：检测 Homebrew / Codex / 登录状态；可一键安装 Codex（先弹原生对话框说明并确认）、用 ChatGPT 登录（Codex 官方流程，Termless 不接触凭证）。
+  - 已安装 Tab：「更新」「卸载」「它能做什么」按钮接入助手，由助手说明并弹确认卡片执行；执行后自动刷新列表。
+  - 已知限制：需要 sudo 的操作（如安装 Homebrew 本身）暂不支持，Agent 会说明需要手动完成；历史 Tab 仍为占位（操作记录已在记忆面板的「最近的改动」里）；未打包。
 - 2026-09-18：Electron 骨架完成。四个 Tab + 中英文切换；**已安装** Tab 读取真实的 Homebrew 数据（参考 Homebrew GUI 的三栏布局：侧边栏 / 列表 / 详情），支持搜索、按类型和「可更新」筛选、依赖与被依赖关系、命令默认折叠；更新 / 卸载按钮暂为禁用，之后经助手确认执行。**助手** Tab 目前只检测 Codex 是否安装、能否启动；发现、历史为占位。
 
 ## 13. 未决问题

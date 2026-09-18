@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { BrewInventory } from '../../shared/types'
+import type { AgentState, BrewInventory, SetupStatus } from '../../shared/types'
 import { useI18n } from './i18n'
 import { BoxIcon, ChatIcon, ClockIcon, CompassIcon } from './icons'
-import { AssistantView } from './views/AssistantView'
+import { AssistantView } from './views/assistant/AssistantView'
 import { ComingSoonView } from './views/ComingSoonView'
 import { InstalledView } from './views/InstalledView'
 
@@ -15,19 +15,43 @@ function initialView(): ViewId {
   return VIEWS.includes(requested as ViewId) ? (requested as ViewId) : 'assistant'
 }
 
+const EMPTY_AGENT: AgentState = { phase: 'idle', error: null, model: null, timeline: [], savingMemory: false }
+
 export type InventoryState = { status: 'loading' } | { status: 'done'; inventory: BrewInventory }
 
 export function App() {
   const { t, lang, setLang } = useI18n()
   const [view, setView] = useState<ViewId>(initialView)
   const [inventory, setInventory] = useState<InventoryState>({ status: 'loading' })
+  const [agent, setAgent] = useState<AgentState>(EMPTY_AGENT)
+  const [setup, setSetup] = useState<SetupStatus | null>(null)
 
-  const loadInventory = useCallback(() => {
-    setInventory({ status: 'loading' })
+  const loadInventory = useCallback((quiet = false) => {
+    if (!quiet) setInventory({ status: 'loading' })
     window.termless.getInventory().then((result) => setInventory({ status: 'done', inventory: result }))
   }, [])
 
-  useEffect(loadInventory, [loadInventory])
+  const refreshSetup = useCallback(async () => {
+    setSetup(await window.termless.getSetupStatus())
+  }, [])
+
+  useEffect(() => {
+    loadInventory()
+    void refreshSetup()
+    window.termless.getAgentState().then(setAgent)
+    const offAgent = window.termless.onAgentState(setAgent)
+    // After the assistant installs or removes something, refresh quietly.
+    const offInventory = window.termless.onInventoryChanged(() => loadInventory(true))
+    return () => {
+      offAgent()
+      offInventory()
+    }
+  }, [loadInventory, refreshSetup])
+
+  const askAssistant = (prompt: string) => {
+    setView('assistant')
+    void window.termless.sendMessage(prompt, lang)
+  }
 
   const updates =
     inventory.status === 'done' && inventory.inventory.ok
@@ -88,8 +112,15 @@ export function App() {
 
       <main className="main">
         <div className="main-content">
-          {view === 'assistant' && <AssistantView />}
-          {view === 'installed' && <InstalledView state={inventory} onRetry={loadInventory} />}
+          {view === 'assistant' && <AssistantView agent={agent} setup={setup} refreshSetup={refreshSetup} />}
+          {view === 'installed' && (
+            <InstalledView
+              state={inventory}
+              onRetry={() => loadInventory()}
+              onAsk={askAssistant}
+              assistantBusy={agent.phase === 'working' || agent.phase === 'starting'}
+            />
+          )}
           {view === 'discover' && <ComingSoonView title={t('nav.discover')} body={t('discover.body')} />}
           {view === 'history' && <ComingSoonView title={t('nav.history')} body={t('history.body')} />}
         </div>
