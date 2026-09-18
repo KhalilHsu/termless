@@ -103,14 +103,16 @@
 - ✅ 技术栈：**Electron + TypeScript**。理由：ACP、Codex SDK 都有官方 TypeScript 实现，对接 Agent 最顺；开源贡献门槛低；以后做 Windows 有退路。
 
 ### 10.2 Agent 层
-- ✅ **一开始就让用户选择** Agent，第一版支持两家：**Codex CLI**（ChatGPT 账号登录）和 **Gemini CLI**（Google 账号登录，有免费额度）。
+- 💡 第一版**只支持 Codex CLI**（ChatGPT 账号登录），待确认。内部保留统一的 Agent 适配层，以后条款允许时再接入其他 Agent。
 - ✅ **不支持 Claude Code**：条款不允许第三方产品以常规方式驱动 Claude 订阅（见 10.2.1）。
-- ✅ 协议层以 **ACP** 为主：Gemini CLI 原生支持（`gemini --acp`）；Codex 可用 ACP 适配器，或 `codex exec --json` / `codex app-server`。App 内部做一层统一的适配。
+- ❌ **Gemini CLI**：个人账号（免费 / Pro / Ultra）已于 2026-06-18 停止服务，由闭源的 Antigravity CLI 取代（见 10.2.1）。
+- ⚠️ **Antigravity CLI**：条款禁止用第三方软件访问 Antigravity，且没有官方 ACP，暂不支持（见 10.2.1）。
+- 协议层：Codex 可用 ACP 适配器，或 `codex exec --json` / `codex app-server`。
 - 不解析 TUI 屏幕输出，只用结构化事件（工具调用、输出、授权请求、提问）。
 - ✅ **只通过 CLI 调用**，不打开也不依赖它们的桌面客户端。
 - 登录一律走各 CLI 自己的官方流程（浏览器登录），App **永不接触 token**。
-- ✅ 用户没有可用的 AI 账号：直接告知无法使用并说明原因（本产品依赖 AI）。由于 Gemini CLI 用普通 Google 账号就有免费额度，这种情况会少很多。
-- ⚠️ CLI 自身会在 `~/.codex`、`~/.gemini` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
+- ✅ 用户没有可用的 AI 账号：直接告知无法使用并说明原因（本产品依赖 AI）。
+- ⚠️ CLI 自身会在 `~/.codex` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
 
 #### 10.2.1 订阅条款调研（2026-09-18）
 
@@ -122,16 +124,18 @@
 - 官方态度开放：推出了「Sign in with ChatGPT」，高管公开表示欢迎第三方 harness（OpenCode、Pi 等已占 Codex 流量的约 10%）。
 - ⚠️ 条款里没有明文保证，属于「默许」。我们驱动的是官方 Codex CLI（Apache-2.0 开源），风险低。
 
-**Google（Gemini CLI）→ 支持**，依据 [Gemini CLI 官方文档：Terms & Privacy](https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md)、[Authentication](https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.mdx)、[ACP Mode](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/acp-mode.md)：
-- ❌ 禁止：用第三方软件**绕过 Gemini CLI、直接访问**它背后的服务（例如把 Gemini CLI 的 OAuth token 拿给 OpenClaw 用）。Google 在 2026 年 2~3 月因此封禁过大量账号，包括付费 Ultra 用户。
-- ✅ 官方支持：Gemini CLI 本身是 Apache-2.0 开源项目，**原生提供 ACP 模式，文档明确说明它就是为「其他工具以程序方式驱动 Gemini CLI」设计的**（Zed、JetBrains 都这样接入）。请求始终由 Gemini CLI 自己发出，不属于上面禁止的情况。
-- 免费额度（官方文档）：普通 Google 账号 1000 次请求/天；Google AI Pro 1500 次；Ultra 2000 次；Gemini API key 免费档 250 次/天（仅 Flash）。
-- ⚠️ 无头模式只能复用已缓存的登录凭证，否则需要 API key。所以首次登录要引导用户完成 Gemini CLI 自己的浏览器登录流程。
-- ⚠️ 有第三方博客称 Google 已于 2026-06-18 停止个人账号通过 Gemini CLI 登录，但**与官方文档当前内容不符**（官方文档仍推荐个人账号用 Google 登录，含免费档和 Pro/Ultra），暂以官方文档为准；开工时实测确认。
+**Google（Gemini CLI → Antigravity CLI）→ 暂不支持**：
+- 2026-05-19 Google I/O 宣布：Gemini CLI 对免费、Google AI Pro、Ultra 个人用户于 **2026-06-18 停止服务**，只保留给 Code Assist Standard/Enterprise 和付费 API key 用户（[Google Developers Blog](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)）。仓库里的旧文档未及时更新，曾误导本调研。
+- 替代品 **Antigravity CLI（`agy`）**：闭源 Go 程序，与 Antigravity 2.0 桌面端共用后端；有无头模式（`--input-format=stream-json --output-format=stream-json`），但**没有官方 ACP 模式**（[feature request #31](https://github.com/google-antigravity/antigravity-cli/issues/31) 至今无官方回复），社区有若干非官方 ACP 包装。
+- ❌ 官方 [FAQ](https://antigravity.google/docs/faq/) / [Terms](https://antigravity.google/terms/)：「Using third party software, tools, or services to access Antigravity is a violation」，可能导致封号；想在第三方 Agent 里用 Gemini，官方建议改用 Vertex / AI Studio API key。
+- 执法很激进：2026-02、2026-09-03 都有付费 Ultra 用户因接入第三方工具被封（[Enterprise DNA](https://enterprisedna.co/resources/ai-pulse/ai-pulse-2026-09-03-google-suspends-paying-antigravity-subscribers-for-using-thi/)）。Google 账号被封对普通用户影响极大，风险不可接受。
+- 以后可以关注：若 Google 为 `agy` 推出官方 ACP 或明确允许第三方客户端，再重新评估。
+
+**未来可选：自带 API key 模式**：Anthropic、Google 都允许开发者产品使用 API key（按量付费）。可以作为高级选项接入 Claude / Gemini，但普通用户很少有 API key，不作为主路径。
 
 **对设计的约束**：
 1. 只驱动官方、未修改的 CLI 二进制，由官方方式安装；绝不提取、转发 CLI 的登录凭证。
-2. 对外只用纯文字写「Works with Codex and Gemini CLI」，不使用对方的 logo。
+2. 对外只用纯文字写「Works with Codex」，不使用对方的 logo。
 3. 条款可能变化，需要定期复查；App 内保留切换 Agent 的能力。
 
 > 以上为公开资料整理，不构成法律意见。
@@ -145,7 +149,7 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 
 | 层 | 内容 | 注入方式 |
 |---|---|---|
-| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | 专用工作目录里的 `AGENTS.md`（Codex 默认读取；Gemini CLI 默认读 `GEMINI.md`，可配置为 `AGENTS.md`），每次都注入 |
+| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | 专用工作目录里的 `AGENTS.md`（Codex 默认读取），每次都注入 |
 | 2. 当前环境 | 系统、芯片、shell、网络、已安装清单摘要 | 开会话时注入 |
 | 3. 长期记忆 | 用户偏好与习惯 | Agent 按需读取 |
 | 4. 操作日志 | 装过 / 改过什么、为什么、如何撤销 | Agent 按需读取 |
@@ -177,4 +181,4 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 - ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。正式发布前需做 USPTO / EUIPO 商标检索
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
-- ✅ 订阅条款：已调研（见 10.2.1），放弃 Claude，支持 Codex + Gemini CLI；开工时实测 Gemini CLI 个人账号登录
+- 💡 订阅条款：已调研（见 10.2.1），Claude、Gemini/Antigravity 均不可行，第一版只支持 Codex，待确认
