@@ -100,33 +100,39 @@
 
 ### 10.1 平台
 - ✅ 第一版只做 **macOS**。
-- ✅ 技术栈：**Electron + TypeScript**。理由：Claude Agent SDK、Codex SDK、ACP 都有官方 TypeScript 实现，对接 Agent 最顺；开源贡献门槛低；以后做 Windows 有退路。
+- ✅ 技术栈：**Electron + TypeScript**。理由：ACP、Codex SDK 都有官方 TypeScript 实现，对接 Agent 最顺；开源贡献门槛低；以后做 Windows 有退路。
 
 ### 10.2 Agent 层
-- ✅ **一开始就让用户选择** Agent，第一版只支持两家：**Codex CLI**（ChatGPT 账号）和 **Claude Code**（Claude Pro/Max）。其他 Agent（如 Gemini CLI）以后再说。
-- ~~协议层统一使用 ACP~~ → 按条款调研结果修改（见 10.2.1）：**Claude 直接驱动官方 `claude` 二进制，不经过 Agent SDK / ACP 适配器**；Codex 可以用 `codex exec --json` / `codex app-server` 或 ACP。App 内部自己做一层统一的适配。
+- ✅ **一开始就让用户选择** Agent，第一版支持两家：**Codex CLI**（ChatGPT 账号登录）和 **Gemini CLI**（Google 账号登录，有免费额度）。
+- ✅ **不支持 Claude Code**：条款不允许第三方产品以常规方式驱动 Claude 订阅（见 10.2.1）。
+- ✅ 协议层以 **ACP** 为主：Gemini CLI 原生支持（`gemini --acp`）；Codex 可用 ACP 适配器，或 `codex exec --json` / `codex app-server`。App 内部做一层统一的适配。
 - 不解析 TUI 屏幕输出，只用结构化事件（工具调用、输出、授权请求、提问）。
-- App 负责检测、一键安装 Agent，并通过官方 OAuth 登录；用户用自己的订阅。
-- ✅ **只通过 CLI 调用**（无头模式 / SDK），不打开也不依赖它们的桌面客户端。
-- ✅ 用户没有任何 AI 订阅：直接告知无法使用并说明原因（本产品依赖 AI）。
-- ⚠️ CLI 自身会在 `~/.claude`、`~/.codex` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
+- ✅ **只通过 CLI 调用**，不打开也不依赖它们的桌面客户端。
+- 登录一律走各 CLI 自己的官方流程（浏览器登录），App **永不接触 token**。
+- ✅ 用户没有可用的 AI 账号：直接告知无法使用并说明原因（本产品依赖 AI）。由于 Gemini CLI 用普通 Google 账号就有免费额度，这种情况会少很多。
+- ⚠️ CLI 自身会在 `~/.codex`、`~/.gemini` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
+
 #### 10.2.1 订阅条款调研（2026-09-18）
 
-**Anthropic（Claude Code）**，依据 [Claude Code · Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)：
-- ❌ 禁止：第三方 App 自己提供 Claude.ai 登录；读取、存储或转发用户的 OAuth token；**用 Agent SDK 搭配用户的 Free/Pro/Max 订阅**（开发者用 SDK 必须走 API key）。2026 年起已在技术上封禁第三方 harness（OpenCode 等因此移除了 Claude 订阅支持）。
-- ✅ 允许：终端用户用自己的订阅登录**未经修改的 Claude Code 二进制**，包括由某个平台来运行 Claude Code 的情况。条件：开发者同意 Commercial Terms；二进制不得修改，不得移除它内置的任何登录方式；不得代付或转售用量；不得把 Claude Code / Anthropic 的名字或 logo 用进自己的产品名和 logo（可以用纯文字说明「runs Claude Code」）。
-- ⚠️ 灰色地带：上述「平台运行 Claude Code」的条款主要针对托管沙箱这类场景，本地桌面 App 是否完全适用，文档没有明说；Anthropic 保留不经通知执行限制的权利。
+**Anthropic（Claude Code）→ 放弃**，依据 [Claude Code · Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)：
+- 禁止第三方 App 提供 Claude.ai 登录、接触 OAuth token、用 Agent SDK 搭配 Free/Pro/Max 订阅；2026 年起已在技术上封禁第三方 harness。
+- 唯一的例外（用户登录未经修改的 Claude Code 二进制、由平台运行）需要同意 Commercial Terms，且是否适用于本地桌面 App 不明确。风险高，放弃。
 
-**OpenAI（Codex CLI）**：
+**OpenAI（Codex CLI）→ 支持**：
 - 官方态度开放：推出了「Sign in with ChatGPT」，高管公开表示欢迎第三方 harness（OpenCode、Pi 等已占 Codex 流量的约 10%）。
-- ⚠️ 但条款里没有明文保证，属于「默许」，将来可能变化。我们本身驱动的就是官方 Codex CLI，风险更低。
+- ⚠️ 条款里没有明文保证，属于「默许」。我们驱动的是官方 Codex CLI（Apache-2.0 开源），风险低。
+
+**Google（Gemini CLI）→ 支持**，依据 [Gemini CLI 官方文档：Terms & Privacy](https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/tos-privacy.md)、[Authentication](https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.mdx)、[ACP Mode](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/acp-mode.md)：
+- ❌ 禁止：用第三方软件**绕过 Gemini CLI、直接访问**它背后的服务（例如把 Gemini CLI 的 OAuth token 拿给 OpenClaw 用）。Google 在 2026 年 2~3 月因此封禁过大量账号，包括付费 Ultra 用户。
+- ✅ 官方支持：Gemini CLI 本身是 Apache-2.0 开源项目，**原生提供 ACP 模式，文档明确说明它就是为「其他工具以程序方式驱动 Gemini CLI」设计的**（Zed、JetBrains 都这样接入）。请求始终由 Gemini CLI 自己发出，不属于上面禁止的情况。
+- 免费额度（官方文档）：普通 Google 账号 1000 次请求/天；Google AI Pro 1500 次；Ultra 2000 次；Gemini API key 免费档 250 次/天（仅 Flash）。
+- ⚠️ 无头模式只能复用已缓存的登录凭证，否则需要 API key。所以首次登录要引导用户完成 Gemini CLI 自己的浏览器登录流程。
+- ⚠️ 有第三方博客称 Google 已于 2026-06-18 停止个人账号通过 Gemini CLI 登录，但**与官方文档当前内容不符**（官方文档仍推荐个人账号用 Google 登录，含免费档和 Pro/Ultra），暂以官方文档为准；开工时实测确认。
 
 **对设计的约束**：
-1. Claude：直接驱动官方 `claude` 二进制（如 `claude -p --output-format stream-json`），**不用 Agent SDK / claude-agent-acp** 搭配订阅。
-2. 登录一律走各 CLI 自己的官方登录流程；App **永不接触 token**。
-3. 不修改、不重新打包 CLI 二进制，由官方安装方式安装。
-4. 对外只用纯文字写「Works with Claude Code and Codex」，不使用对方的 logo。
-5. 发布前：以开发者身份同意 Anthropic Commercial Terms，并通过官方渠道（Contact sales）书面确认本地桌面 App 这种用法；可选支持 API key 作为兜底。
+1. 只驱动官方、未修改的 CLI 二进制，由官方方式安装；绝不提取、转发 CLI 的登录凭证。
+2. 对外只用纯文字写「Works with Codex and Gemini CLI」，不使用对方的 logo。
+3. 条款可能变化，需要定期复查；App 内保留切换 Agent 的能力。
 
 > 以上为公开资料整理，不构成法律意见。
 
@@ -139,7 +145,7 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 
 | 层 | 内容 | 注入方式 |
 |---|---|---|
-| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | 专用工作目录里的 `AGENTS.md` / `CLAUDE.md`，每次都注入 |
+| 1. 身份与规则 | App 用途、用户不懂命令行、第 5 节的产品原则 | 专用工作目录里的 `AGENTS.md`（Codex 默认读取；Gemini CLI 默认读 `GEMINI.md`，可配置为 `AGENTS.md`），每次都注入 |
 | 2. 当前环境 | 系统、芯片、shell、网络、已安装清单摘要 | 开会话时注入 |
 | 3. 长期记忆 | 用户偏好与习惯 | Agent 按需读取 |
 | 4. 操作日志 | 装过 / 改过什么、为什么、如何撤销 | Agent 按需读取 |
@@ -171,4 +177,4 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 - ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。正式发布前需做 USPTO / EUIPO 商标检索
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
-- ⚠️ 订阅条款：已调研（见 10.2.1），方向可行但有灰色地带；发布前需向 Anthropic 书面确认
+- ✅ 订阅条款：已调研（见 10.2.1），放弃 Claude，支持 Codex + Gemini CLI；开工时实测 Gemini CLI 个人账号登录
