@@ -103,7 +103,7 @@
 - ✅ 技术栈：**Electron + TypeScript**。理由：ACP、Codex SDK 都有官方 TypeScript 实现，对接 Agent 最顺；开源贡献门槛低；以后做 Windows 有退路。
 
 ### 10.2 Agent 层
-- 💡 第一版**只支持 Codex CLI**（ChatGPT 账号登录），待确认。内部保留统一的 Agent 适配层，以后条款允许时再接入其他 Agent。
+- ✅ 第一版**只支持 Codex CLI**（ChatGPT 账号登录）。内部保留统一的 Agent 适配层，以后条款允许时再接入其他 Agent。
 - ✅ **不支持 Claude Code**：条款不允许第三方产品以常规方式驱动 Claude 订阅（见 10.2.1）。
 - ❌ **Gemini CLI**：个人账号（免费 / Pro / Ultra）已于 2026-06-18 停止服务，由闭源的 Antigravity CLI 取代（见 10.2.1）。
 - ⚠️ **Antigravity CLI**：条款禁止用第三方软件访问 Antigravity，且没有官方 ACP，暂不支持（见 10.2.1）。
@@ -175,10 +175,14 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 4. 历史 Tab + 长期记忆
 5. 发现 Tab：先放 Coming soon 占位
 
-## 12. 未决问题
+## 12. 进度
+
+- 2026-09-18：Electron 骨架完成。四个 Tab + 中英文切换；**已安装** Tab 读取真实的 Homebrew 数据（参考 Homebrew GUI 的三栏布局：侧边栏 / 列表 / 详情），支持搜索、按类型和「可更新」筛选、依赖与被依赖关系、命令默认折叠；更新 / 卸载按钮暂为禁用，之后经助手确认执行。**助手** Tab 目前只检测 Codex 是否安装、能否启动；发现、历史为占位。
+
+## 13. 未决问题
 
 - ✅ 技术栈：Electron + TypeScript
 - ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。正式发布前需做 USPTO / EUIPO 商标检索
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
-- 💡 订阅条款：已调研（见 10.2.1），Claude、Gemini/Antigravity 均不可行，第一版只支持 Codex，待确认
+- ✅ 订阅条款：已调研（见 10.2.1），Claude、Gemini/Antigravity 均不可行，第一版只支持 Codex
