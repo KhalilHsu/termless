@@ -104,13 +104,31 @@
 
 ### 10.2 Agent 层
 - ✅ **一开始就让用户选择** Agent，第一版只支持两家：**Codex CLI**（ChatGPT 账号）和 **Claude Code**（Claude Pro/Max）。其他 Agent（如 Gemini CLI）以后再说。
-- ✅ 协议层使用 **ACP（Agent Client Protocol）**，本 App 作为 ACP 客户端，对接多家 Agent。
+- ~~协议层统一使用 ACP~~ → 按条款调研结果修改（见 10.2.1）：**Claude 直接驱动官方 `claude` 二进制，不经过 Agent SDK / ACP 适配器**；Codex 可以用 `codex exec --json` / `codex app-server` 或 ACP。App 内部自己做一层统一的适配。
 - 不解析 TUI 屏幕输出，只用结构化事件（工具调用、输出、授权请求、提问）。
 - App 负责检测、一键安装 Agent，并通过官方 OAuth 登录；用户用自己的订阅。
 - ✅ **只通过 CLI 调用**（无头模式 / SDK），不打开也不依赖它们的桌面客户端。
 - ✅ 用户没有任何 AI 订阅：直接告知无法使用并说明原因（本产品依赖 AI）。
 - ⚠️ CLI 自身会在 `~/.claude`、`~/.codex` 保存会话记录，可能出现在官方工具的历史里。需验证能否关闭持久化，或至少固定使用专用工作目录。
-- ⚠️ **开工前必须核实**：第三方 App 驱动用户自己登录的 Claude 订阅（Pro/Max）/ ChatGPT 账号是否符合 Anthropic、OpenAI 的使用条款。这会直接影响产品是否成立。
+#### 10.2.1 订阅条款调研（2026-09-18）
+
+**Anthropic（Claude Code）**，依据 [Claude Code · Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)：
+- ❌ 禁止：第三方 App 自己提供 Claude.ai 登录；读取、存储或转发用户的 OAuth token；**用 Agent SDK 搭配用户的 Free/Pro/Max 订阅**（开发者用 SDK 必须走 API key）。2026 年起已在技术上封禁第三方 harness（OpenCode 等因此移除了 Claude 订阅支持）。
+- ✅ 允许：终端用户用自己的订阅登录**未经修改的 Claude Code 二进制**，包括由某个平台来运行 Claude Code 的情况。条件：开发者同意 Commercial Terms；二进制不得修改，不得移除它内置的任何登录方式；不得代付或转售用量；不得把 Claude Code / Anthropic 的名字或 logo 用进自己的产品名和 logo（可以用纯文字说明「runs Claude Code」）。
+- ⚠️ 灰色地带：上述「平台运行 Claude Code」的条款主要针对托管沙箱这类场景，本地桌面 App 是否完全适用，文档没有明说；Anthropic 保留不经通知执行限制的权利。
+
+**OpenAI（Codex CLI）**：
+- 官方态度开放：推出了「Sign in with ChatGPT」，高管公开表示欢迎第三方 harness（OpenCode、Pi 等已占 Codex 流量的约 10%）。
+- ⚠️ 但条款里没有明文保证，属于「默许」，将来可能变化。我们本身驱动的就是官方 Codex CLI，风险更低。
+
+**对设计的约束**：
+1. Claude：直接驱动官方 `claude` 二进制（如 `claude -p --output-format stream-json`），**不用 Agent SDK / claude-agent-acp** 搭配订阅。
+2. 登录一律走各 CLI 自己的官方登录流程；App **永不接触 token**。
+3. 不修改、不重新打包 CLI 二进制，由官方安装方式安装。
+4. 对外只用纯文字写「Works with Claude Code and Codex」，不使用对方的 logo。
+5. 发布前：以开发者身份同意 Anthropic Commercial Terms，并通过官方渠道（Contact sales）书面确认本地桌面 App 这种用法；可选支持 API key 作为兜底。
+
+> 以上为公开资料整理，不构成法律意见。
 
 ### 10.3 已安装清单的数据来源
 Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool、cargo、Go bin、Mac App Store（mas）、/Applications。
@@ -153,4 +171,4 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 - ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。正式发布前需做 USPTO / EUIPO 商标检索
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
-- ❓ Claude / ChatGPT 订阅被第三方 App 驱动的条款问题（见 10.2）
+- ⚠️ 订阅条款：已调研（见 10.2.1），方向可行但有灰色地带；发布前需向 Anthropic 书面确认
