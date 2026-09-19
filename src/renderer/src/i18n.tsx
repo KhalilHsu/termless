@@ -88,8 +88,6 @@ const en = {
   'memory.forget': 'Forget',
   'memory.clear': 'Forget everything',
   'memory.clearConfirm': 'Forget everything Termless remembers about you?',
-  'memory.actions': 'Recent changes',
-  'memory.noActions': 'No changes recorded yet.',
   'memory.close': 'Close',
 
   'installed.title': 'Installed',
@@ -136,9 +134,25 @@ const en = {
   'detail.copy': 'Copy',
   'detail.copied': 'Copied',
 
+  'history.title': 'History',
+  'history.subtitle': 'Your past conversations',
+  'history.search': 'Search conversations',
+  'history.empty': 'No conversations yet. Start one in the Assistant.',
+  'history.noMatch': 'No conversation matches your search.',
+  'history.current': 'Current',
+  'history.delete': 'Delete',
+  'history.deleteConfirm': 'Delete this conversation? This can’t be undone.',
+  'history.clear': 'Delete all',
+  'history.clearConfirm': 'Delete all conversations? This can’t be undone.',
+  'history.today': 'Today',
+  'history.yesterday': 'Yesterday',
+  'history.thisWeek': 'Earlier this week',
+  'history.older': 'Older',
+  'history.switchConfirm': 'The assistant is still working on the current conversation. Stop it and switch?',
+  'card.stopped': 'Stopped before it finished',
+  'card.expired': 'No longer waiting for an answer',
   'soon.title': 'Coming soon',
   'discover.body': 'Hand-picked tools and ready-made recipes you can install with one click.',
-  'history.body': 'Everything Termless does on your Mac will be listed here, with a way to undo it.'
 }
 
 export type Key = keyof typeof en
@@ -228,8 +242,6 @@ const zh: Record<Key, string> = {
   'memory.forget': '忘掉',
   'memory.clear': '全部忘掉',
   'memory.clearConfirm': '确定让 Termless 忘掉关于你的所有内容吗？',
-  'memory.actions': '最近的改动',
-  'memory.noActions': '还没有记录任何改动。',
   'memory.close': '关闭',
 
   'installed.title': '已安装',
@@ -276,9 +288,25 @@ const zh: Record<Key, string> = {
   'detail.copy': '复制',
   'detail.copied': '已复制',
 
+  'history.title': '历史',
+  'history.subtitle': '过去的对话',
+  'history.search': '搜索对话',
+  'history.empty': '还没有对话。去助手里开始第一段吧。',
+  'history.noMatch': '没有符合搜索条件的对话。',
+  'history.current': '当前',
+  'history.delete': '删除',
+  'history.deleteConfirm': '删除这段对话？删除后无法恢复。',
+  'history.clear': '全部删除',
+  'history.clearConfirm': '删除所有对话？删除后无法恢复。',
+  'history.today': '今天',
+  'history.yesterday': '昨天',
+  'history.thisWeek': '本周早些时候',
+  'history.older': '更早',
+  'history.switchConfirm': '助手还在处理当前的对话。要停下来并切换吗？',
+  'card.stopped': '没有做完就停止了',
+  'card.expired': '已不再等待回答',
   'soon.title': '即将推出',
   'discover.body': '精选的常用工具和现成的「配方」，一键安装。',
-  'history.body': 'Termless 在你电脑上做过的每件事都会列在这里，并且可以撤销。'
 }
 
 const dictionaries: Record<Lang, Record<Key, string>> = { en, zh }

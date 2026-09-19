@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ApprovalDecision, BrewInventory, Lang } from '../shared/types'
+import { ConversationStore } from './agent/conversations'
 import { MemoryStore } from './agent/memory'
 import { AgentSession } from './agent/session'
 import { loadInventory } from './brew'
@@ -31,14 +32,17 @@ function getInventory(fresh = false): Promise<BrewInventory> {
 // --- Agent --------------------------------------------------------------------
 
 const memory = new MemoryStore(join(app.getPath('userData'), 'memory.json'))
+const conversations = new ConversationStore(join(app.getPath('userData'), 'conversations'))
 const agent = new AgentSession({
   memory,
+  conversations,
   getInventory: () => getInventory(),
   workspaceDir: join(app.getPath('userData'), 'workspace'),
   appVersion: app.getVersion()
 })
 
 agent.on('state', (state) => mainWindow?.webContents.send('agent:state', state))
+agent.on('conversations', (list) => mainWindow?.webContents.send('conversations:changed', list))
 agent.on('turn-completed', () => {
   // Commands may have installed or removed software.
   inventoryCache = null
@@ -138,9 +142,16 @@ ipcMain.handle('agent:answer', (_event, itemId: unknown, answer: unknown) => {
   if (typeof itemId === 'string' && typeof answer === 'string' && answer.trim()) agent.answerQuestion(itemId, answer.trim())
 })
 ipcMain.handle('agent:interrupt', () => agent.interrupt())
-ipcMain.handle('agent:new', () => {
-  void agent.newConversation()
+ipcMain.handle('agent:new', () => agent.newConversation())
+
+ipcMain.handle('conversations:list', () => agent.listConversations())
+ipcMain.handle('conversations:open', (_event, id: unknown) => {
+  if (typeof id === 'string') return agent.openConversation(id)
 })
+ipcMain.handle('conversations:delete', (_event, id: unknown) => {
+  if (typeof id === 'string') return agent.deleteConversation(id)
+})
+ipcMain.handle('conversations:clear', () => agent.clearConversations())
 
 ipcMain.handle('memory:get', () => memory.snapshot())
 ipcMain.handle('memory:forget', (_event, id: unknown) => {
@@ -166,12 +177,16 @@ app.on('window-all-closed', () => {
 })
 
 // Save what was learned in the current conversation before quitting, but
-// never hold the app open for long.
+// never hold the app open for long. Calling app.quit() again after the
+// async cleanup doesn't reliably finish quitting, so exit explicitly.
 let quitting = false
 app.on('before-quit', (event) => {
   if (quitting) return
   quitting = true
   event.preventDefault()
   const timeout = new Promise((resolve) => setTimeout(resolve, 20_000))
-  void Promise.race([agent.shutdown(), timeout]).finally(() => app.quit())
+  void Promise.race([agent.shutdown(), timeout]).finally(() => app.exit(0))
 })
+
+// Ctrl+C in `npm run dev`, or a test runner stopping the app.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => app.quit())

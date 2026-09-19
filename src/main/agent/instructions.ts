@@ -83,4 +83,5 @@ You will get a conversation between the user and the assistant, plus the facts a
 Pick out new, lasting facts worth remembering in future conversations: the user's preferences, goals, where they keep things, what they use their Mac for, and what was installed or changed for them and why.
 Do not include: one-off details, anything already stored, guesses, or secrets (passwords, keys, tokens, personal identifiers).
 Write each fact as one short, self-contained sentence in the language the user used.
-Answer with JSON only, exactly in this shape: {"facts": ["...", "..."]}. Use {"facts": []} if there is nothing new. Do not run any commands.`
+Also give the conversation a short title (at most 6 words) that says what it was about, like "Download a YouTube video". Write the title in the language named at the top of the input.
+Answer with JSON only, exactly in this shape: {"title": "...", "facts": ["...", "..."]}. Use an empty list if there are no new facts. Do not run any commands.`

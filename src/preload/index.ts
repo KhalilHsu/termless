@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AgentState, TermlessApi } from '../shared/types'
+import type { AgentState, ConversationSummary, TermlessApi } from '../shared/types'
 
 // The renderer gets exactly these calls and nothing else from Node/Electron.
 const api: TermlessApi & { onInventoryChanged(listener: () => void): () => void } = {
@@ -22,6 +22,16 @@ const api: TermlessApi & { onInventoryChanged(listener: () => void): () => void 
   answerQuestion: (itemId, answer) => ipcRenderer.invoke('agent:answer', itemId, answer),
   interrupt: () => ipcRenderer.invoke('agent:interrupt'),
   newConversation: () => ipcRenderer.invoke('agent:new'),
+
+  listConversations: () => ipcRenderer.invoke('conversations:list'),
+  onConversationsChanged: (listener) => {
+    const handler = (_event: IpcRendererEvent, list: ConversationSummary[]) => listener(list)
+    ipcRenderer.on('conversations:changed', handler)
+    return () => ipcRenderer.removeListener('conversations:changed', handler)
+  },
+  openConversation: (id) => ipcRenderer.invoke('conversations:open', id),
+  deleteConversation: (id) => ipcRenderer.invoke('conversations:delete', id),
+  clearConversations: () => ipcRenderer.invoke('conversations:clear'),
 
   getMemory: () => ipcRenderer.invoke('memory:get'),
   forgetFact: (id) => ipcRenderer.invoke('memory:forget', id),

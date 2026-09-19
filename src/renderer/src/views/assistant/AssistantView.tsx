@@ -66,14 +66,17 @@ export function AssistantView({
 
   const last = agent.timeline[agent.timeline.length - 1]
   const waitingOnUser = agent.timeline.some(
-    (item) => (item.kind === 'command' && item.status === 'awaiting-approval') || (item.kind === 'question' && item.answer === null)
+    (item) => (item.kind === 'command' && item.status === 'awaiting-approval') || (item.kind === 'question' && item.answer === null && !item.expired)
   )
   const showThinking =
     busy && !waitingOnUser && !(last?.kind === 'agent' && last.streaming && last.text) && !(last?.kind === 'command' && last.status === 'running')
 
   return (
     <div className="view">
-      <ViewHeader title={t('assistant.title')} subtitle={agent.model ? t('assistant.model', { model: agent.model }) : t('assistant.subtitle')}>
+      <ViewHeader
+        title={agent.conversationTitle ?? t('assistant.title')}
+        subtitle={agent.model ? t('assistant.model', { model: agent.model }) : t('assistant.subtitle')}
+      >
         {agent.savingMemory && <span className="muted small saving">{t('assistant.savingMemory')}</span>}
         <button className="button" onClick={() => setShowMemory(true)}>
           {t('assistant.memory')}

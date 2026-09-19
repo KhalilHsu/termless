@@ -63,7 +63,7 @@ export type TimelineItem =
       kind: 'command'
       id: string
       command: string
-      status: 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined'
+      status: 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined' | 'stopped'
       risk: CommandRisk
       output: string | null
       exitCode: number | null
@@ -76,12 +76,17 @@ export type TimelineItem =
       options: { label: string; description?: string }[]
       allowOther: boolean
       answer: string | null
+      /** The conversation moved on before this was answered. */
+      expired?: boolean
     }
   | { kind: 'notice'; id: string; tone: 'info' | 'error'; text: string }
 
 export type AgentPhase = 'idle' | 'starting' | 'ready' | 'working' | 'error'
 
 export interface AgentState {
+  /** null until the first message of a new conversation. */
+  conversationId: string | null
+  conversationTitle: string | null
   phase: AgentPhase
   /** Plain-language explanation when phase is 'error'. */
   error: string | null
@@ -92,6 +97,18 @@ export interface AgentState {
 }
 
 export type ApprovalDecision = 'accept' | 'decline'
+
+// ---------------------------------------------------------------------------
+// Conversation history
+
+export interface ConversationSummary {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  /** First user message, for search and preview. */
+  preview: string
+}
 
 // ---------------------------------------------------------------------------
 // Memory
@@ -112,6 +129,7 @@ export interface ActionRecord {
 
 export interface MemorySnapshot {
   facts: MemoryFact[]
+  /** Changes Termless made; used as agent context, not shown as its own screen. */
   actions: ActionRecord[]
 }
 
@@ -135,6 +153,12 @@ export interface TermlessApi {
   answerQuestion(itemId: string, answer: string): Promise<void>
   interrupt(): Promise<void>
   newConversation(): Promise<void>
+
+  listConversations(): Promise<ConversationSummary[]>
+  onConversationsChanged(listener: (list: ConversationSummary[]) => void): () => void
+  openConversation(id: string): Promise<void>
+  deleteConversation(id: string): Promise<void>
+  clearConversations(): Promise<void>
 
   getMemory(): Promise<MemorySnapshot>
   forgetFact(id: string): Promise<MemorySnapshot>

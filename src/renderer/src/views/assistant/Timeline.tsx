@@ -81,6 +81,9 @@ function CommandCard({ item }: { item: CommandItem }) {
     case 'declined':
       statusLine = t('card.declined')
       break
+    case 'stopped':
+      statusLine = t('card.stopped')
+      break
   }
 
   return (
@@ -133,6 +136,8 @@ function QuestionCard({ item }: { item: QuestionItem }) {
       <div className="question-text">{item.question}</div>
       {item.answer !== null ? (
         <div className="muted">{t('card.answered', { answer: item.answer })}</div>
+      ) : item.expired ? (
+        <div className="muted">{t('card.expired')}</div>
       ) : (
         <>
           <div className="question-options">

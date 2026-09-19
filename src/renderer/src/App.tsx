@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentState, BrewInventory, SetupStatus } from '../../shared/types'
+import type { AgentState, BrewInventory, ConversationSummary, SetupStatus } from '../../shared/types'
 import { useI18n } from './i18n'
 import { BoxIcon, ChatIcon, ClockIcon, CompassIcon } from './icons'
 import { AssistantView } from './views/assistant/AssistantView'
 import { ComingSoonView } from './views/ComingSoonView'
+import { HistoryView } from './views/HistoryView'
 import { InstalledView } from './views/InstalledView'
 
 export type ViewId = 'assistant' | 'installed' | 'discover' | 'history'
@@ -15,7 +16,15 @@ function initialView(): ViewId {
   return VIEWS.includes(requested as ViewId) ? (requested as ViewId) : 'assistant'
 }
 
-const EMPTY_AGENT: AgentState = { phase: 'idle', error: null, model: null, timeline: [], savingMemory: false }
+const EMPTY_AGENT: AgentState = {
+  conversationId: null,
+  conversationTitle: null,
+  phase: 'idle',
+  error: null,
+  model: null,
+  timeline: [],
+  savingMemory: false
+}
 
 export type InventoryState = { status: 'loading' } | { status: 'done'; inventory: BrewInventory }
 
@@ -25,6 +34,7 @@ export function App() {
   const [inventory, setInventory] = useState<InventoryState>({ status: 'loading' })
   const [agent, setAgent] = useState<AgentState>(EMPTY_AGENT)
   const [setup, setSetup] = useState<SetupStatus | null>(null)
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
 
   const loadInventory = useCallback((quiet = false) => {
     if (!quiet) setInventory({ status: 'loading' })
@@ -40,13 +50,26 @@ export function App() {
     void refreshSetup()
     window.termless.getAgentState().then(setAgent)
     const offAgent = window.termless.onAgentState(setAgent)
+    window.termless.listConversations().then(setConversations)
+    const offConversations = window.termless.onConversationsChanged(setConversations)
     // After the assistant installs or removes something, refresh quietly.
     const offInventory = window.termless.onInventoryChanged(() => loadInventory(true))
     return () => {
       offAgent()
+      offConversations()
       offInventory()
     }
   }, [loadInventory, refreshSetup])
+
+  const assistantBusy = agent.phase === 'working' || agent.phase === 'starting'
+
+  // Talking always happens in the Assistant; History only picks which
+  // conversation it shows.
+  const openConversation = async (id: string) => {
+    if (id !== agent.conversationId && assistantBusy && !window.confirm(t('history.switchConfirm'))) return
+    await window.termless.openConversation(id)
+    setView('assistant')
+  }
 
   const askAssistant = (prompt: string) => {
     setView('assistant')
@@ -118,11 +141,13 @@ export function App() {
               state={inventory}
               onRetry={() => loadInventory()}
               onAsk={askAssistant}
-              assistantBusy={agent.phase === 'working' || agent.phase === 'starting'}
+              assistantBusy={assistantBusy}
             />
           )}
           {view === 'discover' && <ComingSoonView title={t('nav.discover')} body={t('discover.body')} />}
-          {view === 'history' && <ComingSoonView title={t('nav.history')} body={t('history.body')} />}
+          {view === 'history' && (
+            <HistoryView conversations={conversations} currentId={agent.conversationId} onOpen={(id) => void openConversation(id)} />
+          )}
         </div>
         <footer className={`statusbar is-${statusTone}`}>
           <span className="status-dot" />
