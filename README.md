@@ -16,6 +16,7 @@ npm run dev        # run with hot reload
 npm run typecheck
 npm run build      # production build into out/
 npm start          # run the production build
+npm run install:mac  # package, ad-hoc sign and install to /Applications (this Mac only)
 ```
 
 If Electron fails to start after `npm install` with a missing-binary error, run `node node_modules/electron/install.js`.

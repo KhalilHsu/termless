@@ -11,7 +11,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:mac": "npm run build && electron-builder --mac --dir && scripts/sign-mac.sh"
+    "dist:mac": "npm run build && electron-builder --mac --dir && scripts/sign-mac.sh",
+    "install:mac": "scripts/install-mac.sh"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
