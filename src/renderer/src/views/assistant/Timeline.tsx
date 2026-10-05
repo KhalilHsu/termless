@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ScriptReport, TimelineItem } from '../../../../shared/types'
+import type { NetworkReport, ScriptReport, TimelineItem } from '../../../../shared/types'
 import { useI18n } from '../../i18n'
 import { CheckIcon, TerminalIcon } from '../../icons'
 import { Markdown } from '../../Markdown'
@@ -29,6 +29,8 @@ export function TimelineView({ items }: { items: TimelineItem[] }) {
             return <CommandCard key={item.id} item={item} />
           case 'question':
             return <QuestionCard key={item.id} item={item} />
+          case 'network':
+            return <NetworkCard key={item.id} report={item.report} />
           case 'activity':
             return (
               <div key={item.id} className={`activity is-${item.status}`}>
@@ -136,6 +138,51 @@ function CommandCard({ item }: { item: CommandItem }) {
       )}
     </div>
   )
+}
+
+/** Result of a network check: what can be reached, why not, speed, proxies. */
+function NetworkCard({ report }: { report: NetworkReport | null }) {
+  const { t } = useI18n()
+  if (!report) {
+    return (
+      <div className="card network-card">
+        <div className="card-head">
+          <span className="spinner spinner-small" />
+          <span className="card-status">{t('network.checking')}</span>
+        </div>
+      </div>
+    )
+  }
+  const { system, environment, shell } = report.proxy
+  return (
+    <div className={`card network-card is-${report.verdict}`}>
+      <div className="card-head">
+        <span className={`network-dot is-${report.verdict === 'ok' ? 'ok' : 'bad'}`} />
+        <span className="card-status">{t(`network.verdict.${report.verdict}`)}</span>
+      </div>
+      <ul className="network-probes">
+        {report.probes.map((p) => (
+          <li key={p.id} className={p.ok ? 'is-ok' : 'is-bad'}>
+            <span className="network-mark">{p.ok ? '✓' : '✕'}</span>
+            <span>{p.label}</span>
+            {!p.ok && p.problem && <span className="muted"> · {t(`network.problem.${p.problem}`)}</span>}
+          </li>
+        ))}
+      </ul>
+      {report.bytesPerSecond !== null && <p className="network-line">{t('network.speed', { speed: formatSpeed(report.bytesPerSecond) })}</p>}
+      {system.length > 0 && <p className="network-line">{t('network.systemProxy', { proxy: system.join(', ') })}</p>}
+      {environment.length > 0 ? (
+        <p className="network-line">{t('network.toolsProxy', { proxy: environment.join('; ') })}</p>
+      ) : system.length > 0 ? (
+        <p className="network-line">{t('network.toolsNoProxy')}</p>
+      ) : null}
+      {shell.length > 0 && environment.length === 0 && <p className="network-line">{t('network.shellProxy', { proxy: shell.join('; ') })}</p>}
+    </div>
+  )
+}
+
+function formatSpeed(bytesPerSecond: number): string {
+  return bytesPerSecond >= 1024 * 1024 ? `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s` : `${Math.round(bytesPerSecond / 1024)} KB/s`
 }
 
 /** Where a script from the internet comes from and what Termless found in it. */

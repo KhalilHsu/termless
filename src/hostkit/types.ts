@@ -228,3 +228,46 @@ export interface ScriptReport {
   /** Why the script could not be downloaded. */
   error: string | null
 }
+
+// ---------------------------------------------------------------------------
+// Network diagnosis (network.ts)
+
+export interface NetworkTarget {
+  id: string
+  /** Human name, e.g. "GitHub". */
+  label: string
+  url: string
+}
+
+/** dns: name lookup failed; refused / timeout / reset: connection problems; tls: secure connection broken; proxy: the configured proxy is unreachable. */
+export type NetworkProblem = 'dns' | 'refused' | 'timeout' | 'tls' | 'reset' | 'proxy' | 'other'
+
+export interface NetworkProbe extends NetworkTarget {
+  ok: boolean
+  status: number | null
+  problem: NetworkProblem | null
+  ms: number
+  /** curl's own words, when it failed. */
+  detail: string | null
+}
+
+export interface ProxySettings {
+  /** From System Settings (used by browsers, not by command-line tools). */
+  system: string[]
+  /** Proxy variables command-line tools here would use. */
+  environment: string[]
+  /** Proxy variables from the user's shell setup (Terminal windows). */
+  shell: string[]
+}
+
+export interface NetworkReport {
+  verdict: 'ok' | 'offline' | 'captive-portal' | 'proxy-broken' | 'partial' | 'slow'
+  probes: NetworkProbe[]
+  /** true: a Wi-Fi login page is in the way. null: couldn't tell. */
+  captivePortal: boolean | null
+  /** Measured download speed from GitHub, when it could be measured. */
+  bytesPerSecond: number | null
+  proxy: ProxySettings
+  /** Plain English for an agent. */
+  summary: string
+}

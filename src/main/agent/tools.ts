@@ -29,6 +29,13 @@ export const TOOL_SPECS = [
   },
   {
     type: 'function',
+    name: 'termless_diagnose_network',
+    description:
+      "Check this Mac's internet connection the way command-line tools see it: whether GitHub, Homebrew, npm, PyPI and OpenAI can be reached, why not (name lookup, refused, timed out, secure connection broken, proxy down), whether a Wi-Fi login page is in the way, the download speed, and how proxies are set up (System Settings vs. command-line tools). The user sees the result as a card. Use it when a download or install fails with a network error, or the user says the internet isn't working.",
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    type: 'function',
     name: 'termless_inspect_script',
     description:
       'Download (never run) the script that a command like `curl … | sh`, `bash -c "$(curl …)"` or `bash <(curl …)` would run, and report where it comes from, whether the publisher is well known, what risky things it does (administrator rights, deleting files, editing shell settings, background services, reading passwords…), and its text. Use it before running any script from the internet, then explain it to the user in plain words.',

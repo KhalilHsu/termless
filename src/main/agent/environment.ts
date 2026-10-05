@@ -1,5 +1,6 @@
 import { arch, homedir, userInfo } from 'node:os'
 import { runText } from '../../hostkit'
+import { quickNetworkCheck } from '../network'
 import type { Inventory, SourceReport } from '../../shared/types'
 
 // Layer 2 of the agent's context: a short, factual picture of this Mac,
@@ -21,7 +22,7 @@ export async function collectEnvironment(inventory: Inventory | null): Promise<M
     runText('/usr/bin/sw_vers', ['-productVersion'], { timeoutMs: 5000 })
       .then((v) => v.trim())
       .catch(() => 'unknown'),
-    checkNetwork()
+    networkFacts()
   ])
 
   let homebrew = 'not installed'
@@ -54,26 +55,14 @@ function describeSource(source: SourceReport, inventory: Inventory): string {
   return `${name}: ${items.length} ${isApps ? 'apps' : 'packages'}${outdated ? `, ${outdated} with updates available` : ''}`
 }
 
-async function checkNetwork(): Promise<string> {
-  const targets = [
-    ['GitHub', 'https://github.com'],
-    ['Homebrew', 'https://formulae.brew.sh'],
-    ['OpenAI', 'https://api.openai.com']
-  ] as const
-
-  const results = await Promise.all(
-    targets.map(async ([name, url]) => {
-      try {
-        await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) })
-        return [name, true] as const
-      } catch {
-        return [name, false] as const
-      }
-    })
-  )
-
-  const unreachable = results.filter(([, ok]) => !ok).map(([name]) => name)
-  if (unreachable.length === 0) return 'online; GitHub, Homebrew and OpenAI are reachable'
-  if (unreachable.length === results.length) return 'appears to be offline (GitHub, Homebrew and OpenAI all unreachable)'
-  return `online, but these could not be reached: ${unreachable.join(', ')}`
+/** First line of the quick network check, plus the proxy situation when it matters. */
+async function networkFacts(): Promise<string> {
+  try {
+    const report = await quickNetworkCheck()
+    const lines = report.summary.split('\n')
+    const proxy = lines.filter((l) => /proxy/i.test(l) && !l.startsWith('- '))
+    return [lines[0], ...proxy].join(' ')
+  } catch {
+    return 'unknown (the check failed)'
+  }
 }

@@ -60,10 +60,18 @@ async function quit() {
   await sleep(1000)
 }
 
-const cdp = (method, params = {}) =>
-  new Promise((r) => {
+// Every call gives up after a while, so a stuck page fails the run instead of hanging it.
+const cdp = (method, params = {}, timeoutMs = 60_000) =>
+  new Promise((resolve, reject) => {
     const i = ++msgId
-    pending.set(i, r)
+    const timer = setTimeout(() => {
+      pending.delete(i)
+      reject(new Error(`${method} did not answer within ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+    pending.set(i, (m) => {
+      clearTimeout(timer)
+      resolve(m)
+    })
     ws.send(JSON.stringify({ id: i, method, params }))
   })
 const js = async (expr) => {
@@ -71,10 +79,16 @@ const js = async (expr) => {
   if (r.result.exceptionDetails) throw new Error(JSON.stringify(r.result.exceptionDetails).slice(0, 400))
   return r.result.result.value
 }
+// Screenshots need the window to be painted; with the display asleep they
+// never arrive. They are a nice-to-have, so skip them rather than block.
 const shot = async (name) => {
-  const r = await cdp('Page.captureScreenshot', { format: 'png' })
-  writeFileSync(`${outDir}/${name}.png`, Buffer.from(r.result.data, 'base64'))
-  console.log('  screenshot', name)
+  try {
+    const r = await cdp('Page.captureScreenshot', { format: 'png' }, 10_000)
+    writeFileSync(`${outDir}/${name}.png`, Buffer.from(r.result.data, 'base64'))
+    console.log('  screenshot', name)
+  } catch (error) {
+    console.log('  screenshot', name, 'skipped:', error.message)
+  }
 }
 const state = () => js('window.termless.getAgentState()')
 const conversations = () => js('window.termless.listConversations()')
@@ -163,6 +177,8 @@ const abort = (error) => {
 }
 process.on('uncaughtException', abort)
 process.on('unhandledRejection', abort)
+// Stopped from outside (Ctrl+C, a timeout): still record the threads and close the app.
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => abort(new Error(`stopped by ${signal}`)))
 
 export {
   sleep,

@@ -1440,3 +1440,50 @@ p {
 .history-footer .button {
   color: var(--red);
 }
+
+/* Network check card */
+.network-card .card-head {
+  gap: 8px;
+}
+
+.network-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.network-dot.is-bad {
+  background: var(--red);
+}
+
+.network-probes {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 16px;
+  font-size: 13px;
+}
+
+.network-mark {
+  display: inline-block;
+  width: 18px;
+  font-weight: 700;
+}
+
+.network-probes .is-ok .network-mark {
+  color: var(--green);
+}
+
+.network-probes .is-bad .network-mark {
+  color: var(--red);
+}
+
+.network-line {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}

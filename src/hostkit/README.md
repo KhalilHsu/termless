@@ -75,6 +75,19 @@ Rules for sources:
 - Keep the parsing in a pure exported function (`parseXxx(stdout)`) and test it with recorded output in `test/`.
 - If the source knows which paths on disk an item installed, set `claims`, so duplicates are merged.
 
+### Network diagnosis
+
+```ts
+import { diagnoseNetwork } from './hostkit'
+
+const report = await diagnoseNetwork({ env: hostEnv() })
+// report.verdict: 'ok' | 'offline' | 'captive-portal' | 'proxy-broken' | 'partial' | 'slow'
+// report.probes: [{ id: 'github', ok, status, problem: 'dns' | 'refused' | 'timeout' | 'tls' | 'reset' | 'proxy' | 'other' | null }]
+// report.proxy: { system, environment, shell }; report.summary: plain English
+```
+
+Probes go through `/usr/bin/curl` on purpose: it honours the same proxy variables as brew, git, npm and pip, so the result is what those tools experience. It also checks Apple's captive-portal URL, measures download speed on a large GitHub file (first 4 MB), and compares the System Settings proxy with the one command-line tools use. `looksLikeNetworkError(output)` recognises network failures in the output of curl, git, Homebrew, npm and pip. Pass `targets`, `captiveUrl` and `speedUrl` to point it elsewhere (tests do).
+
 ### Scripts from the internet
 
 ```ts

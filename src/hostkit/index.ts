@@ -4,7 +4,7 @@
 export * from './types.ts'
 export { loadInventory, loadSource, findItem, type LoadOptions } from './inventory.ts'
 export { execFileResult, runText, expectSuccess, ExecError, findExecutable, which, isExecutable, shellQuote, command } from './exec.ts'
-export { standardPaths, loadShellPath, hostPath, hostEnv, readOnlyEnv } from './environment.ts'
+export { standardPaths, loadShellPath, shellEnvironment, hostPath, hostEnv, readOnlyEnv } from './environment.ts'
 export { measureSize } from './size.ts'
 export { runAsAdmin, parseAdminError, adminCommandProblem, type AdminResult, type AdminOptions } from './admin.ts'
 export * from './sources/index.ts'
@@ -28,3 +28,16 @@ export {
   inspectRemoteScript,
   type InspectOptions
 } from './remoteScript.ts'
+export {
+  diagnoseNetwork,
+  summarizeNetwork,
+  readProxySettings,
+  parseScutilProxy,
+  looksLikeNetworkError,
+  formatSpeed,
+  DEFAULT_TARGETS,
+  CAPTIVE_CHECK_URL,
+  SPEED_TEST_URL,
+  SLOW_BYTES_PER_SECOND,
+  type DiagnoseOptions
+} from './network.ts'

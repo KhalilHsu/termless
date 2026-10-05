@@ -26,30 +26,45 @@ export function standardPaths(home = homedir()): string[] {
 const SYSTEM_PATHS = ['/usr/bin', '/bin', '/usr/sbin', '/sbin']
 
 let shellPath: string[] = []
+let shellEnv: NodeJS.ProcessEnv | null = null
 
 /**
- * Asks the user's login shell for its PATH (so version managers such as nvm
- * or asdf are found too) and remembers it for hostEnv(). Safe to skip: the
+ * Asks the user's interactive login shell for its environment, as a
+ * Terminal window would have it, and remembers its PATH for hostEnv() (so
+ * version managers such as nvm or asdf are found too). Safe to skip: the
  * standard paths still apply. Call once at startup.
  */
 export async function loadShellPath(timeoutMs = 5000): Promise<string[]> {
   const shell = userInfo().shell || process.env.SHELL || '/bin/zsh'
-  const marker = '__HOSTKIT_PATH__'
+  const marker = '__HOSTKIT_ENV__'
   const output = await new Promise<string>((resolve) => {
     execFile(
       shell,
-      ['-ilc', `printf '${marker}%s${marker}' "$PATH"`],
+      ['-ilc', `printf '${marker}'; /usr/bin/env -0; printf '${marker}'`],
       {
         timeout: timeoutMs,
+        maxBuffer: 4 * 1024 * 1024,
         // Keep interactive setups quiet and non-blocking (oh-my-zsh update prompt etc.).
         env: { ...process.env, DISABLE_AUTO_UPDATE: 'true', ZSH_DISABLE_COMPFIX: 'true' }
       },
       (_error, stdout) => resolve(typeof stdout === 'string' ? stdout : '')
     ).stdin?.end()
   })
-  const match = output.match(new RegExp(`${marker}(.*)${marker}`, 's'))
-  shellPath = match ? match[1].split(delimiter).filter((p) => p.startsWith('/')) : []
+  const match = output.match(new RegExp(`${marker}([\\s\\S]*)${marker}`))
+  if (!match) return (shellPath = [])
+  shellEnv = Object.fromEntries(
+    match[1]
+      .split('\0')
+      .filter((entry) => entry.includes('='))
+      .map((entry) => [entry.slice(0, entry.indexOf('=')), entry.slice(entry.indexOf('=') + 1)])
+  )
+  shellPath = (shellEnv.PATH ?? '').split(delimiter).filter((p) => p.startsWith('/'))
   return shellPath
+}
+
+/** The login shell's environment from loadShellPath(), or null if it wasn't loaded. */
+export function shellEnvironment(): NodeJS.ProcessEnv | null {
+  return shellEnv
 }
 
 /** PATH with the standard places, the login shell's PATH and the system folders. */

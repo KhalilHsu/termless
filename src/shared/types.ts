@@ -2,7 +2,7 @@
 
 // What is installed on this Mac comes from hostkit (src/hostkit), Termless's
 // standalone module for package managers; its types are plain data.
-import type { HomebrewInstallStep, HomebrewSupport, Inventory, ScriptReport } from '../hostkit/types'
+import type { HomebrewInstallStep, HomebrewSupport, Inventory, NetworkReport, ScriptReport } from '../hostkit/types'
 
 export type {
   CommandSpec,
@@ -10,6 +10,8 @@ export type {
   InstalledItem,
   Inventory,
   ItemKind,
+  NetworkProbe,
+  NetworkReport,
   ScriptFinding,
   ScriptFindingId,
   ScriptReport,
@@ -74,6 +76,8 @@ export type TimelineItem =
       exitCode: number | null
     }
   | { kind: 'activity'; id: string; tool: string; summary: string; status: 'running' | 'done' | 'failed' }
+  /** A network check the agent ran; report is null while it runs. */
+  | { kind: 'network'; id: string; report: NetworkReport | null }
   | {
       kind: 'question'
       id: string

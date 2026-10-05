@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { mkdirSync } from 'node:fs'
-import { adminCommandProblem, inspectRemoteScript, runAsAdmin } from '../../hostkit'
+import { adminCommandProblem, inspectRemoteScript, looksLikeNetworkError, runAsAdmin } from '../../hostkit'
+import { checkNetwork } from '../network'
 import type {
   AgentState,
   ApprovalDecision,
@@ -22,7 +23,8 @@ import { describeToolCall, FINDING_DESCRIPTIONS, runTool, TOOL_SPECS } from './t
 const MAX_OUTPUT_CHARS = 20_000
 const ADMIN_TOOL = 'termless_run_as_admin'
 /** Tools that show their own card instead of an activity line. */
-const CARD_TOOLS = new Set(['termless_ask_user', ADMIN_TOOL])
+const NETWORK_TOOL = 'termless_diagnose_network'
+const CARD_TOOLS = new Set(['termless_ask_user', ADMIN_TOOL, NETWORK_TOOL])
 const MEMORY_TIMEOUT_MS = 90_000
 const PERSIST_DELAY_MS = 400
 
@@ -78,6 +80,7 @@ export class AgentSession extends EventEmitter {
   private lastUserMessage = ''
   private commandsThisTurn: string[] = []
   private loggedThisTurn = false
+  private networkHintThisTurn = false
 
   private sideThreads = new Map<string, (text: string | null) => void>()
   private sideThreadText = new Map<string, string>()
@@ -122,6 +125,7 @@ export class AgentSession extends EventEmitter {
     this.lastUserMessage = message
     this.commandsThisTurn = []
     this.loggedThisTurn = false
+    this.networkHintThisTurn = false
     this.setPhase('starting')
     this.emitConversations()
 
@@ -533,6 +537,7 @@ export class AgentSession extends EventEmitter {
         const command = displayCommand(item.command)
         if (status !== 'declined') this.commandsThisTurn.push(command)
         this.current?.transcript.push(`Ran command (${status}): ${command}`)
+        if (status === 'failed' && looksLikeNetworkError(item.aggregatedOutput ?? '')) this.suggestNetworkCheck()
         break
       }
 
@@ -603,6 +608,10 @@ export class AgentSession extends EventEmitter {
           this.requestAdminCommand(id, params.callId as string, params.arguments ?? {})
           return
         }
+        if (params.tool === NETWORK_TOOL) {
+          await this.runNetworkCheck(id, params.callId as string)
+          return
+        }
         if (params.tool === 'termless_log_action') this.loggedThisTurn = true
         try {
           const result = await runTool(params.tool, params.arguments, { memory: this.deps.memory, getInventory: this.deps.getInventory })
@@ -643,6 +652,44 @@ export class AgentSession extends EventEmitter {
   }
 
   // -------------------------------------------------------------------------
+  // Network
+
+  /** Runs the check the agent asked for and shows it as a card. */
+  private async runNetworkCheck(requestId: number | string, itemId: string): Promise<void> {
+    this.push({ kind: 'network', id: itemId, report: null })
+    let text: string
+    try {
+      const report = await checkNetwork()
+      this.updateItem(itemId, (item) => (item.kind === 'network' ? { ...item, report } : item))
+      this.current?.transcript.push(`Network check: ${report.summary.split('\n')[0]}`)
+      text = report.summary
+    } catch (error) {
+      this.updateItem(itemId, () => ({ kind: 'notice', id: itemId, tone: 'error', text: String(error) }))
+      text = `The network check itself failed: ${error}`
+    }
+    this.client?.respond(requestId, { success: true, contentItems: [{ type: 'inputText', text }] })
+  }
+
+  /** A command failed with what looks like a network error: nudge the agent to diagnose before retrying (once per turn). */
+  private suggestNetworkCheck(): void {
+    if (this.networkHintThisTurn) return
+    this.networkHintThisTurn = true
+    this.tellAgent('That command failed with what looks like a network error. Call termless_diagnose_network before retrying, then explain the cause to the user.')
+  }
+
+  /** Adds a note from Termless to the running turn (Codex turn/steer). */
+  private tellAgent(text: string): void {
+    if (!this.client || !this.threadId || !this.turnId) return
+    void this.client
+      .request('turn/steer', {
+        threadId: this.threadId,
+        expectedTurnId: this.turnId,
+        input: [{ type: 'text', text: `[Message from Termless, not from the user] ${text}`, text_elements: [] }]
+      })
+      .catch(() => {})
+  }
+
+  // -------------------------------------------------------------------------
   // Scripts from the internet
 
   /**
@@ -660,13 +707,10 @@ export class AgentSession extends EventEmitter {
       this.client.respond(requestId, { decision: 'decline' })
       this.updateItem(itemId, (i) => (i.kind === 'command' ? { ...i, status: 'blocked', script: report } : i))
       // The agent would otherwise only hear "declined" and may think the user said no.
-      if (this.threadId && this.turnId) {
-        const found = report.findings.filter((f) => f.severity === 'block').map((f) => FINDING_DESCRIPTIONS[f.id])
-        const text = `[Message from Termless, not from the user] Termless blocked that command before it ran: the script it downloads (checked just now, at the moment it would have run) ${found.join('; ')}. If you looked at this script earlier and it seemed fine, it has changed since. Tell the user plainly that Termless blocked it and why, and do not try to run it in any other way.`
-        void this.client
-          .request('turn/steer', { threadId: this.threadId, expectedTurnId: this.turnId, input: [{ type: 'text', text, text_elements: [] }] })
-          .catch(() => {})
-      }
+      const found = report.findings.filter((f) => f.severity === 'block').map((f) => FINDING_DESCRIPTIONS[f.id])
+      this.tellAgent(
+        `Termless blocked that command before it ran: the script it downloads (checked just now, at the moment it would have run) ${found.join('; ')}. If you looked at this script earlier and it seemed fine, it has changed since. Tell the user plainly that Termless blocked it and why, and do not try to run it in any other way.`
+      )
       return
     }
     this.approvals.set(itemId, { requestId })
