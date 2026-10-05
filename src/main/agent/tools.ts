@@ -1,4 +1,5 @@
 import { inspectRemoteScript } from '../../hostkit'
+import { readPage } from './web'
 import type { InstalledItem, Inventory, ScriptFindingId, ScriptReport } from '../../shared/types'
 import type { MemoryStore } from './memory'
 
@@ -24,6 +25,62 @@ export const TOOL_SPECS = [
           description: 'Optional: only items installed by this tool.'
         }
       },
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'termless_read_page',
+    description:
+      'Read a web page the user shared, without running anything or asking the user: for a GitHub repository you get its README plus description, main language, license and stars; for other pages, their text. Use it for GitHub links, tutorials and documentation instead of curl.',
+    inputSchema: {
+      type: 'object',
+      properties: { url: { type: 'string', description: 'http(s) address of the page or repository.' } },
+      required: ['url'],
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'termless_propose_plan',
+    description:
+      'Show the user a plan card before setting up something that takes several steps (a GitHub project, a tutorial, a tool that needs other tools first). The user presses Start or Not now; you get their answer. Steps are plain-language actions the user can follow, e.g. "Install Python 3.12", not commands.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'What gets set up, e.g. "Set up ComfyUI".' },
+        summary: { type: 'string', description: 'One or two plain sentences: what it is for, what will be installed, and roughly how long it takes.' },
+        steps: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 10,
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Short plain action.' },
+              detail: { type: 'string', description: 'Optional: one plain sentence of explanation.' }
+            },
+            required: ['title'],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ['title', 'summary', 'steps'],
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'termless_update_plan',
+    description: "Update a step on the plan card as you carry the plan out: 'running' when you start it, then 'done', 'failed' (with a short note) or 'skipped'.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        step: { type: 'integer', minimum: 1, description: 'Step number, starting at 1.' },
+        status: { type: 'string', enum: ['running', 'done', 'failed', 'skipped'] },
+        note: { type: 'string', description: 'Optional short note, e.g. why it failed.' }
+      },
+      required: ['step', 'status'],
       additionalProperties: false
     }
   },
@@ -165,6 +222,8 @@ export function describeToolCall(tool: string, args: any, lang: 'en' | 'zh'): st
       return zh ? '下载并检查了网上的脚本（没有运行）' : 'Downloaded and checked the script (did not run it)'
     case 'termless_list_changes':
       return zh ? '查看了这段对话做过的改动' : 'Looked up the changes made in this conversation'
+    case 'termless_read_page':
+      return (zh ? '读取了网页：' : 'Read the page: ') + shortUrl(String(args?.url ?? ''))
     case 'termless_remember':
       return (zh ? '记住了：' : 'Remembered: ') + String(args?.fact ?? '')
     case 'termless_recall':
@@ -212,6 +271,24 @@ export async function runTool(
       const report = await inspectRemoteScript(String(args?.command ?? ''))
       if (!report) return { success: false, text: 'That is not a command that runs a script from the internet, and not a script URL.' }
       return { success: true, text: describeScriptReport(report) }
+    }
+
+    case 'termless_read_page': {
+      const page = await readPage(String(args?.url ?? ''))
+      const repo = page.repository
+      const facts = repo
+        ? [
+            `GitHub repository ${repo.name}`,
+            repo.description ? `Description: ${repo.description}` : '',
+            repo.language ? `Main language: ${repo.language}` : '',
+            repo.license ? `License: ${repo.license}` : '',
+            repo.stars !== null ? `Stars: ${repo.stars}` : ''
+          ]
+        : [`Page: ${page.url}`, page.title ? `Title: ${page.title}` : '']
+      return {
+        success: true,
+        text: `${facts.filter(Boolean).join('\n')}\n\n${repo ? 'README' : 'Text'}${page.truncated ? ' (shortened)' : ''}:\n${page.text}`
+      }
     }
 
     case 'termless_remember': {
@@ -309,4 +386,13 @@ export function describeScriptReport(report: ScriptReport): string {
     report.text ? `\nScript${report.text.length > 12_000 ? ' (first 12,000 characters)' : ''}:\n${report.text.slice(0, 12_000)}` : ''
   ]
   return lines.filter(Boolean).join('\n')
+}
+
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.host}${u.pathname.replace(/\/$/, '')}`
+  } catch {
+    return url
+  }
 }

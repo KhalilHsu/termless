@@ -79,6 +79,20 @@ export type TimelineItem =
   /** A network check the agent ran; report is null while it runs. */
   | { kind: 'network'; id: string; report: NetworkReport | null }
   | {
+      kind: 'plan'
+      id: string
+      title: string
+      /** One or two plain sentences: what this sets up and roughly how long it takes. */
+      summary: string
+      steps: PlanStep[]
+      /** null while waiting for the user. */
+      decision: 'accepted' | 'declined' | null
+      /** Index of the step where it stopped, when the turn ended before the plan was finished. */
+      stoppedAt: number | null
+      /** The conversation moved on before the user answered. */
+      expired?: boolean
+    }
+  | {
       kind: 'question'
       id: string
       question: string
@@ -89,6 +103,14 @@ export type TimelineItem =
       expired?: boolean
     }
   | { kind: 'notice'; id: string; tone: 'info' | 'error'; text: string }
+
+export interface PlanStep {
+  title: string
+  detail?: string
+  status: 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+  /** Short note from the agent, e.g. why it failed. */
+  note?: string
+}
 
 export type AgentPhase = 'idle' | 'starting' | 'ready' | 'working' | 'error'
 
@@ -197,6 +219,7 @@ export interface TermlessApi {
   sendMessage(text: string, lang: Lang): Promise<void>
   respondToApproval(itemId: string, decision: ApprovalDecision): Promise<void>
   answerQuestion(itemId: string, answer: string): Promise<void>
+  answerPlan(itemId: string, decision: 'accepted' | 'declined'): Promise<void>
   interrupt(): Promise<void>
   newConversation(): Promise<void>
 

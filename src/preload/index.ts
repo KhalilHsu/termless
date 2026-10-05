@@ -29,6 +29,7 @@ const api: TermlessApi & { onInventoryChanged(listener: () => void): () => void 
   sendMessage: (text, lang) => ipcRenderer.invoke('agent:send', text, lang),
   respondToApproval: (itemId, decision) => ipcRenderer.invoke('agent:approve', itemId, decision),
   answerQuestion: (itemId, answer) => ipcRenderer.invoke('agent:answer', itemId, answer),
+  answerPlan: (itemId, decision) => ipcRenderer.invoke('agent:plan', itemId, decision),
   interrupt: () => ipcRenderer.invoke('agent:interrupt'),
   newConversation: () => ipcRenderer.invoke('agent:new'),
 

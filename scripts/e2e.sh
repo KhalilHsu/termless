@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs the end-to-end suites against a throwaway data folder.
 #   scripts/e2e.sh              all suites
-#   scripts/e2e.sh safety       just one (core, safety, undo)
+#   scripts/e2e.sh safety       just one (core, safety, undo, plan)
 # Needs Codex signed in somewhere; by default it reuses ~/.codex
 # (override with TERMLESS_CODEX_HOME). Screenshots go to $OUT.
 # Every conversation is deleted at the end, together with its Codex thread;
@@ -14,7 +14,7 @@ rm -f "$OUT/threads.json"
 npm run build >/dev/null
 export TERMLESS_CODEX_HOME="${TERMLESS_CODEX_HOME:-$HOME/.codex}"
 suites=("$@")
-[ ${#suites[@]} -eq 0 ] && suites=(core safety undo)
+[ ${#suites[@]} -eq 0 ] && suites=(core safety undo plan)
 status=0
 for suite in "${suites[@]}"; do
   echo "=== $suite"

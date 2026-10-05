@@ -119,9 +119,21 @@ const openFromHistory = async (title) => {
   return ok
 }
 const lastAgentText = (s) => [...s.timeline].reverse().find((i) => i.kind === 'agent')?.text ?? ''
+const planWaiting = (s) => s.timeline.find((i) => i.kind === 'plan' && i.decision === null && !i.expired)
+// Answers every card until the turn ends: commands get `decision`; a plan
+// card gets Start when commands are being allowed, Not now otherwise.
 const finishTurn = async (label, decision = 'Allow') => {
   for (;;) {
-    const s = await waitFor(label, (s) => s.phase === 'ready' || s.timeline.some((i) => i.kind === 'command' && i.status === 'awaiting-approval'))
+    const s = await waitFor(label, (s) => s.phase === 'ready' || s.timeline.some((i) => i.kind === 'command' && i.status === 'awaiting-approval') || Boolean(planWaiting(s)))
+    const plan = planWaiting(s)
+    if (plan) {
+      const answer = decision === 'Allow' ? 'Start' : 'Not now'
+      console.log('  plan:', plan.title, '→', answer)
+      await waitForDom('.plan-card .card-actions')
+      await clickText(answer)
+      await sleep(800)
+      continue
+    }
     const card = s.timeline.find((i) => i.kind === 'command' && i.status === 'awaiting-approval')
     if (!card) return s
     console.log('  card:', card.risk, '|', card.command, '→', decision)

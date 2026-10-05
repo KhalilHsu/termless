@@ -31,6 +31,8 @@ export function TimelineView({ items }: { items: TimelineItem[] }) {
             return <QuestionCard key={item.id} item={item} />
           case 'network':
             return <NetworkCard key={item.id} report={item.report} />
+          case 'plan':
+            return <PlanCard key={item.id} item={item} />
           case 'activity':
             return (
               <div key={item.id} className={`activity is-${item.status}`}>
@@ -133,6 +135,53 @@ function CommandCard({ item }: { item: CommandItem }) {
           </button>
           <button className="button" onClick={() => window.termless.respondToApproval(item.id, 'decline')}>
             {t('card.deny')}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type PlanItem = Extract<TimelineItem, { kind: 'plan' }>
+
+/** The steps the agent proposes for a bigger job, with Start / Not now, then the progress. */
+function PlanCard({ item }: { item: PlanItem }) {
+  const { t } = useI18n()
+  const done = item.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
+  let status: string
+  if (item.decision === null) status = item.expired ? t('plan.expired') : t('plan.proposed')
+  else if (item.decision === 'declined') status = t('plan.declined')
+  else if (item.stoppedAt !== null) status = t('plan.stoppedAt', { step: item.stoppedAt + 1 })
+  else if (done === item.steps.length) status = t('plan.finished')
+  else status = t('plan.progress', { done, total: item.steps.length })
+  return (
+    <div className={`card plan-card ${item.decision === null && !item.expired ? 'is-waiting' : ''}`}>
+      <div className="plan-head">
+        <div className="plan-title">{item.title}</div>
+        <div className="card-status muted">{status}</div>
+      </div>
+      {item.summary && <p className="plan-summary">{item.summary}</p>}
+      <ol className="plan-steps">
+        {item.steps.map((step, i) => (
+          <li key={i} className={`is-${step.status} ${item.stoppedAt === i ? 'is-stopped' : ''}`}>
+            <span className="plan-step-mark">
+              {step.status === 'running' ? <span className="spinner spinner-small" /> : step.status === 'done' ? <CheckIcon size={11} /> : step.status === 'failed' ? '✕' : i + 1}
+            </span>
+            <span>
+              <span className="plan-step-title">{step.title}</span>
+              {step.detail && <span className="plan-step-detail">{step.detail}</span>}
+              {step.note && <span className="plan-step-note">{step.note}</span>}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {item.decision === null && !item.expired && (
+        <div className="card-actions">
+          <button className="button button-primary" onClick={() => window.termless.answerPlan(item.id, 'accepted')}>
+            {t('plan.start')}
+          </button>
+          <button className="button" onClick={() => window.termless.answerPlan(item.id, 'declined')}>
+            {t('plan.notNow')}
           </button>
         </div>
       )}

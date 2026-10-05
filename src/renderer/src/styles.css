@@ -1500,3 +1500,87 @@ p {
   white-space: nowrap;
   margin-right: 8px;
 }
+
+/* Plan card */
+.plan-card.is-waiting {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 15%, transparent), var(--shadow);
+}
+
+.plan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.plan-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.plan-summary {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.plan-steps {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plan-steps li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.plan-step-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.plan-steps li.is-done .plan-step-mark {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.plan-steps li.is-failed .plan-step-mark,
+.plan-steps li.is-stopped .plan-step-mark {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.plan-steps li.is-skipped {
+  opacity: 0.6;
+}
+
+.plan-step-title {
+  display: block;
+  font-weight: 600;
+}
+
+.plan-step-detail,
+.plan-step-note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.plan-step-note {
+  color: var(--red);
+}

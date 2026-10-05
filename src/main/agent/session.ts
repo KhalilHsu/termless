@@ -24,9 +24,10 @@ import { describeToolCall, FINDING_DESCRIPTIONS, runTool, TOOL_SPECS } from './t
 
 const MAX_OUTPUT_CHARS = 20_000
 const ADMIN_TOOL = 'termless_run_as_admin'
-/** Tools that show their own card instead of an activity line. */
 const NETWORK_TOOL = 'termless_diagnose_network'
-const CARD_TOOLS = new Set(['termless_ask_user', ADMIN_TOOL, NETWORK_TOOL])
+const PLAN_TOOL = 'termless_propose_plan'
+/** Tools that show their own card instead of an activity line. */
+const CARD_TOOLS = new Set(['termless_ask_user', ADMIN_TOOL, NETWORK_TOOL, PLAN_TOOL, 'termless_update_plan'])
 const MEMORY_TIMEOUT_MS = 90_000
 const PERSIST_DELAY_MS = 400
 
@@ -44,6 +45,7 @@ interface Deps {
 
 type PendingAnswer =
   | { type: 'tool'; requestId: number | string }
+  | { type: 'plan'; requestId: number | string }
   | { type: 'userInput'; requestId: number | string; questionId: string; group: string }
 
 const EMPTY_STATE: AgentState = {
@@ -176,7 +178,7 @@ export class AgentSession extends EventEmitter {
 
   answerQuestion(itemId: string, answer: string): void {
     const pending = this.answers.get(itemId)
-    if (!pending || !this.client) return
+    if (!pending || pending.type === 'plan' || !this.client) return
     this.answers.delete(itemId)
     this.updateItem(itemId, (item) => (item.kind === 'question' ? { ...item, answer } : item))
     this.current?.transcript.push(`User chose: ${answer}`)
@@ -197,6 +199,20 @@ export class AgentSession extends EventEmitter {
       this.userInputGroups.delete(pending.group)
       this.client.respond(group.requestId, { answers: group.answers })
     }
+  }
+
+  /** The user pressed Start or Not now on a plan card. */
+  answerPlan(itemId: string, decision: 'accepted' | 'declined'): void {
+    const pending = this.answers.get(itemId)
+    if (!pending || pending.type !== 'plan' || !this.client) return
+    this.answers.delete(itemId)
+    this.updateItem(itemId, (item) => (item.kind === 'plan' ? { ...item, decision } : item))
+    this.current?.transcript.push(decision === 'accepted' ? 'User started the plan.' : 'User turned the plan down.')
+    const text =
+      decision === 'accepted'
+        ? "The user pressed Start. Carry the plan out in order. Call termless_update_plan with 'running' when you begin a step and 'done', 'failed' or 'skipped' when it ends. Every command still needs the user's OK on its own card."
+        : 'The user pressed Not now. Do not run any step of this plan. Ask what they would like instead, briefly.'
+    this.client.respond(pending.requestId, { success: true, contentItems: [{ type: 'inputText', text }] })
   }
 
   async interrupt(): Promise<void> {
@@ -227,6 +243,7 @@ export class AgentSession extends EventEmitter {
     target.timeline = target.timeline.map((item) => {
       if (item.kind === 'command' && (item.status === 'awaiting-approval' || item.status === 'running' || item.status === 'checking')) return { ...item, status: 'stopped' }
       if (item.kind === 'question' && item.answer === null) return { ...item, expired: true }
+      if (item.kind === 'plan') return settlePlan(item)
       if (item.kind === 'agent' && item.streaming) return { ...item, streaming: false }
       return item
     })
@@ -476,6 +493,7 @@ export class AgentSession extends EventEmitter {
     for (const item of this.state.timeline) {
       if (item.kind === 'command' && (item.status === 'running' || item.status === 'checking')) this.updateItem(item.id, (i) => (i.kind === 'command' ? { ...i, status: 'stopped' } : i))
       if (item.kind === 'question' && item.answer === null) this.updateItem(item.id, (i) => (i.kind === 'question' ? { ...i, expired: true } : i))
+      if (item.kind === 'plan') this.updateItem(item.id, (i) => (i.kind === 'plan' ? settlePlan(i) : i))
     }
     this.answers.clear()
 
@@ -633,6 +651,14 @@ export class AgentSession extends EventEmitter {
           await this.runNetworkCheck(id, params.callId as string)
           return
         }
+        if (params.tool === PLAN_TOOL) {
+          this.proposePlan(id, params.callId as string, params.arguments ?? {})
+          return
+        }
+        if (params.tool === 'termless_update_plan') {
+          client.respond(id, { success: true, contentItems: [{ type: 'inputText', text: this.updatePlan(params.arguments ?? {}) }] })
+          return
+        }
         if (params.tool === 'termless_list_changes') {
           client.respond(id, { success: true, contentItems: [{ type: 'inputText', text: this.describeChanges() }] })
           return
@@ -674,6 +700,38 @@ export class AgentSession extends EventEmitter {
         // Requests Termless does not support are refused rather than left hanging.
         client.respondError(id, `Termless does not support ${method}`)
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Plans
+
+  private proposePlan(requestId: number | string, itemId: string, args: any): void {
+    const steps = Array.isArray(args?.steps) ? args.steps : []
+    this.answers.set(itemId, { type: 'plan', requestId })
+    this.push({
+      kind: 'plan',
+      id: itemId,
+      title: String(args?.title ?? ''),
+      summary: String(args?.summary ?? ''),
+      steps: steps.map((s: any) => ({ title: String(s?.title ?? ''), detail: s?.detail ? String(s.detail) : undefined, status: 'pending' as const })),
+      decision: null,
+      stoppedAt: null
+    })
+    this.current?.transcript.push(`Proposed a plan: ${String(args?.title ?? '')} (${steps.map((s: any) => s?.title).join('; ')})`)
+  }
+
+  /** termless_update_plan: moves a step of the latest accepted plan along. */
+  private updatePlan(args: any): string {
+    const plan = [...this.state.timeline].reverse().find((i) => i.kind === 'plan' && i.decision === 'accepted')
+    if (!plan || plan.kind !== 'plan') return 'There is no accepted plan to update.'
+    const index = Number(args?.step) - 1
+    if (!(index >= 0 && index < plan.steps.length)) return `There is no step ${args?.step}; the plan has ${plan.steps.length}.`
+    const status = ['running', 'done', 'failed', 'skipped'].includes(args?.status) ? args.status : 'running'
+    const note = args?.note ? String(args.note).slice(0, 200) : undefined
+    this.updateItem(plan.id, (item) =>
+      item.kind === 'plan' ? { ...item, steps: item.steps.map((s, i) => (i === index ? { ...s, status, note: note ?? s.note } : s)), stoppedAt: null } : item
+    )
+    return 'Updated.'
   }
 
   // -------------------------------------------------------------------------
@@ -1031,4 +1089,18 @@ function parseExtraction(text: string | null): { title: string | null; facts: st
   } catch {
     return { title: null, facts: [] }
   }
+}
+
+/**
+ * When a turn ends: an unanswered plan can't be answered any more, and an
+ * accepted plan with unfinished steps shows where it stopped.
+ */
+function settlePlan(plan: Extract<TimelineItem, { kind: 'plan' }>): Extract<TimelineItem, { kind: 'plan' }> {
+  if (plan.decision === null) return { ...plan, expired: true }
+  if (plan.decision !== 'accepted') return plan
+  const unfinished = plan.steps.findIndex((s) => s.status === 'pending' || s.status === 'running' || s.status === 'failed')
+  if (unfinished === -1) return { ...plan, stoppedAt: null }
+  // A step left "running" when the turn ended didn't finish.
+  const steps = plan.steps.map((s) => (s.status === 'running' ? { ...s, status: 'failed' as const } : s))
+  return { ...plan, steps, stoppedAt: unfinished }
 }

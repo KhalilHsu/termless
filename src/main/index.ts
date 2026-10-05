@@ -152,6 +152,9 @@ ipcMain.handle('agent:approve', (_event, itemId: unknown, decision: unknown) => 
 ipcMain.handle('agent:answer', (_event, itemId: unknown, answer: unknown) => {
   if (typeof itemId === 'string' && typeof answer === 'string' && answer.trim()) agent.answerQuestion(itemId, answer.trim())
 })
+ipcMain.handle('agent:plan', (_event, itemId: unknown, decision: unknown) => {
+  if (typeof itemId === 'string' && (decision === 'accepted' || decision === 'declined')) agent.answerPlan(itemId, decision)
+})
 ipcMain.handle('agent:interrupt', () => agent.interrupt())
 ipcMain.handle('agent:new', () => agent.newConversation())
 

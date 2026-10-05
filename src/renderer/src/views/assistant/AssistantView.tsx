@@ -66,7 +66,10 @@ export function AssistantView({
 
   const last = agent.timeline[agent.timeline.length - 1]
   const waitingOnUser = agent.timeline.some(
-    (item) => (item.kind === 'command' && item.status === 'awaiting-approval') || (item.kind === 'question' && item.answer === null && !item.expired)
+    (item) =>
+      (item.kind === 'command' && item.status === 'awaiting-approval') ||
+      (item.kind === 'question' && item.answer === null && !item.expired) ||
+      (item.kind === 'plan' && item.decision === null && !item.expired)
   )
   const showThinking =
     busy && !waitingOnUser && !(last?.kind === 'agent' && last.streaming && last.text) && !(last?.kind === 'command' && (last.status === 'running' || last.status === 'checking'))
