@@ -11,11 +11,14 @@ type Group = { key: Key | null; label: string; items: ConversationSummary[] }
 export function HistoryView({
   conversations,
   currentId,
-  onOpen
+  onOpen,
+  onUndo
 }: {
   conversations: ConversationSummary[]
   currentId: string | null
   onOpen: (id: string) => void
+  /** Opens the conversation and asks the Assistant to undo its changes. */
+  onUndo: (id: string) => void
 }) {
   const { t, lang } = useI18n()
   const [query, setQuery] = useState('')
@@ -71,7 +74,17 @@ export function HistoryView({
                             {c.id === currentId && <span className="badge badge-cask">{t('history.current')}</span>}
                           </span>
                           {c.preview && c.preview !== c.title && <span className="history-preview">{c.preview}</span>}
+                          {c.changes > 0 && (
+                            <span className="history-changes">
+                              {c.undoable > 0 ? t('history.changes', { count: c.changes }) : t('history.changesUndone', { count: c.changes })}
+                            </span>
+                          )}
                         </button>
+                        {c.undoable > 0 && (
+                          <button className="link history-undo" onClick={() => onUndo(c.id)}>
+                            {t('history.undo')}
+                          </button>
+                        )}
                         <span className="history-time">{group.key === 'history.older' ? date.format(updated) : time.format(updated)}</span>
                         <button className="link history-delete" onClick={() => remove(c.id)}>
                           {t('history.delete')}

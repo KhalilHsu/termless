@@ -42,6 +42,7 @@ export const pipx: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'install', name]),
+  reinstallCommand: (item, probe) => command([probe.path, 'install', item.version ? `${item.displayName}==${item.version}` : item.displayName]),
   upgradeCommand: (item, probe) => command([probe.path, 'upgrade', item.name]),
   uninstallCommand: (item, probe) => command([probe.path, 'uninstall', item.name])
 }
@@ -87,6 +88,7 @@ export const uvTool: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'tool', 'install', name]),
+  reinstallCommand: (item, probe) => command([probe.path, 'tool', 'install', item.version ? `${item.name}==${item.version}` : item.name]),
   upgradeCommand: (item, probe) => command([probe.path, 'tool', 'upgrade', item.name]),
   uninstallCommand: (item, probe) => command([probe.path, 'tool', 'uninstall', item.name])
 }

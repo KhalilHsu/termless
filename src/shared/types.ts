@@ -2,7 +2,7 @@
 
 // What is installed on this Mac comes from hostkit (src/hostkit), Termless's
 // standalone module for package managers; its types are plain data.
-import type { HomebrewInstallStep, HomebrewSupport, Inventory, NetworkReport, ScriptReport } from '../hostkit/types'
+import type { CommandSpec, HomebrewInstallStep, HomebrewSupport, Inventory, NetworkReport, ScriptReport } from '../hostkit/types'
 
 export type {
   CommandSpec,
@@ -117,6 +117,36 @@ export interface ConversationSummary {
   updatedAt: string
   /** First user message, for search and preview. */
   preview: string
+  /** Changes Termless recorded in this conversation, and how many can still be undone. */
+  changes: number
+  undoable: number
+}
+
+// ---------------------------------------------------------------------------
+// Changes and undo
+
+/** One step to undo a change; the agent runs it through a confirmation card. */
+export type UndoStep =
+  | { kind: 'command'; command: CommandSpec }
+  /** Copy the backup over the file. */
+  | { kind: 'restore-file'; path: string; backup: string }
+  /** The file didn't exist before: move it to the Trash. */
+  | { kind: 'remove-file'; path: string }
+  /** An app that was moved to the Trash: move it back. */
+  | { kind: 'put-back'; name: string; folder: string }
+
+export interface ChangeRecord {
+  id: string
+  at: string
+  kind: 'installed' | 'removed' | 'updated' | 'file-created' | 'file-changed' | 'file-deleted'
+  /** Plain one-liner, e.g. "Installed cowsay (npm)". */
+  title: string
+  /** Inventory item id, or file path. */
+  target: string
+  /** null: Termless can't undo it automatically (see undoNote). */
+  undo: UndoStep[] | null
+  undoNote: string | null
+  undone: boolean
 }
 
 // ---------------------------------------------------------------------------

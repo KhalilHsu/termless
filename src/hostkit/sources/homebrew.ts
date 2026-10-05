@@ -65,6 +65,9 @@ export const homebrew: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'install', name]),
+  // Homebrew can't install an older version on request; this installs the current one.
+  reinstallCommand: (item, probe) =>
+    command(item.extra.type === 'cask' ? [probe.path, 'install', '--cask', item.name] : [probe.path, 'install', item.name]),
   upgradeCommand: (item, probe) =>
     command(item.extra.type === 'cask' ? [probe.path, 'upgrade', '--cask', item.name] : [probe.path, 'upgrade', item.name]),
   uninstallCommand: (item, probe) =>

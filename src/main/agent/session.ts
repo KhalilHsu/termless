@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { mkdirSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { adminCommandProblem, inspectRemoteScript, looksLikeNetworkError, runAsAdmin } from '../../hostkit'
 import { checkNetwork } from '../network'
 import type {
@@ -12,6 +13,7 @@ import type {
 } from '../../shared/types'
 import { AppServerClient, type Notification, type ServerRequest } from '../codex/appServer'
 import { codexEnv, getCodexStatus } from '../codex/detect'
+import { ChangeTracker, deleteBackups, undoStepCommand } from './changes'
 import { classifyCommand, displayCommand } from './commands'
 import { AGENT_EFFORT, AGENT_MODEL, EPHEMERAL_THREADS } from './config'
 import type { Conversation, ConversationStore } from './conversations'
@@ -32,6 +34,10 @@ interface Deps {
   memory: MemoryStore
   conversations: ConversationStore
   getInventory: () => Promise<Inventory>
+  /** Inventory without update checks, to see what a turn changed. */
+  snapshotInventory: () => Promise<Inventory>
+  /** Backups of files changed by each conversation live in <backupsDir>/<conversation id>. */
+  backupsDir: string
   workspaceDir: string
   appVersion: string
 }
@@ -82,6 +88,9 @@ export class AgentSession extends EventEmitter {
   private loggedThisTurn = false
   private networkHintThisTurn = false
 
+  /** Sees what each turn changed on the Mac, so it can be undone. */
+  private readonly tracker: ChangeTracker
+
   private sideThreads = new Map<string, (text: string | null) => void>()
   private sideThreadText = new Map<string, string>()
   private extractionsRunning = 0
@@ -94,6 +103,7 @@ export class AgentSession extends EventEmitter {
   constructor(private readonly deps: Deps) {
     super()
     mkdirSync(deps.workspaceDir, { recursive: true })
+    this.tracker = new ChangeTracker({ snapshotInventory: deps.snapshotInventory, backupDir: (id) => join(deps.backupsDir, id) })
   }
 
   getState(): AgentState {
@@ -154,7 +164,10 @@ export class AgentSession extends EventEmitter {
     const pending = this.approvals.get(itemId)
     if (!pending || !this.client) return
     this.approvals.delete(itemId)
-    this.client.respond(pending.requestId, { decision })
+    const client = this.client
+    // A change only goes ahead once Termless has noted how things were before it.
+    if (decision === 'accept') void this.tracker.begin().then(() => client.respond(pending.requestId, { decision }))
+    else client.respond(pending.requestId, { decision })
     this.updateItem(itemId, (item) =>
       item.kind === 'command' ? { ...item, status: decision === 'accept' ? 'running' : 'declined' } : item
     )
@@ -240,6 +253,7 @@ export class AgentSession extends EventEmitter {
       this.emitNow()
     }
     const removed = this.deps.conversations.delete(id)
+    deleteBackups(join(this.deps.backupsDir, id))
     this.emitConversations()
     if (removed?.threadId) await this.deleteThread(removed.threadId)
   }
@@ -468,8 +482,10 @@ export class AgentSession extends EventEmitter {
     if (turn?.status === 'failed' && turn.error?.message) this.pushNotice('error', turn.error.message)
     if (turn?.status === 'interrupted') this.pushNotice('info', this.lang === 'zh' ? '已停止。' : 'Stopped.')
 
-    // Keep a record of every change, even if the agent forgot to log it.
-    if (this.commandsThisTurn.length > 0 && !this.loggedThisTurn) {
+    // See what actually changed on the Mac, with the steps to undo it.
+    if (this.tracker.active && this.current) void this.recordChanges(this.current)
+    // Without a snapshot (nothing needed approval), still keep a note of what ran.
+    else if (this.commandsThisTurn.length > 0 && !this.loggedThisTurn) {
       const request = this.lastUserMessage.replace(/\s+/g, ' ').slice(0, 80)
       this.deps.memory.logAction(`For "${request}": ran ${this.commandsThisTurn.slice(0, 3).join('; ')}`.slice(0, 300), null)
     }
@@ -491,6 +507,10 @@ export class AgentSession extends EventEmitter {
         break
       }
       case 'fileChange':
+        void this.tracker.begin()
+        for (const change of item.changes ?? []) {
+          if (change?.path) this.tracker.watchFile(isAbsolute(change.path) ? change.path : join(this.deps.workspaceDir, change.path))
+        }
         this.push({
           kind: 'command',
           id: item.id,
@@ -584,6 +604,7 @@ export class AgentSession extends EventEmitter {
           await this.checkScriptBeforeApproval(id, itemId, item.command)
           return
         }
+        void this.tracker.begin()
         this.approvals.set(itemId, { requestId: id })
         this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status: 'awaiting-approval' } : item))
         return
@@ -610,6 +631,10 @@ export class AgentSession extends EventEmitter {
         }
         if (params.tool === NETWORK_TOOL) {
           await this.runNetworkCheck(id, params.callId as string)
+          return
+        }
+        if (params.tool === 'termless_list_changes') {
+          client.respond(id, { success: true, contentItems: [{ type: 'inputText', text: this.describeChanges() }] })
           return
         }
         if (params.tool === 'termless_log_action') this.loggedThisTurn = true
@@ -649,6 +674,37 @@ export class AgentSession extends EventEmitter {
         // Requests Termless does not support are refused rather than left hanging.
         client.respondError(id, `Termless does not support ${method}`)
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Changes and undo
+
+  private async recordChanges(conversation: Conversation): Promise<void> {
+    const { records, undoneIds } = await this.tracker.finish(conversation.id, conversation.changes)
+    if (records.length === 0 && undoneIds.length === 0) return
+    for (const record of conversation.changes) if (undoneIds.includes(record.id)) record.undone = true
+    conversation.changes.push(...records)
+    for (const record of records) {
+      this.deps.memory.logAction(record.title, record.undo ? record.undo.map(undoStepCommand).join(' && ') : null)
+    }
+    if (conversation === this.current) this.flushPersist(conversation)
+    else if (this.deps.conversations.get(conversation.id)) this.deps.conversations.save(conversation)
+    this.emitConversations()
+  }
+
+  /** termless_list_changes: the current conversation's changes with their undo commands. */
+  private describeChanges(): string {
+    const changes = this.current?.changes ?? []
+    if (changes.length === 0) return 'Termless has not recorded any changes in this conversation yet.'
+    const lines = changes.map((c, i) => {
+      const how = c.undone
+        ? 'already undone'
+        : c.undo
+          ? `to undo, run ${c.undo.length > 1 ? 'in order' : ''}: ${c.undo.map((s) => `\`${undoStepCommand(s)}\``).join(' then ')}`
+          : `can't be undone automatically: ${c.undoNote ?? 'no known way'}`
+      return `${i + 1}. ${c.title} (${c.at.slice(0, 16).replace('T', ' ')}) — ${how}`
+    })
+    return `Changes Termless recorded in this conversation, oldest first:\n${lines.join('\n')}`
   }
 
   // -------------------------------------------------------------------------
@@ -713,6 +769,7 @@ export class AgentSession extends EventEmitter {
       )
       return
     }
+    void this.tracker.begin()
     this.approvals.set(itemId, { requestId })
     this.updateItem(itemId, (i) => (i.kind === 'command' ? { ...i, status: 'awaiting-approval', script: report ?? undefined } : i))
   }
@@ -729,6 +786,7 @@ export class AgentSession extends EventEmitter {
       this.client?.respond(requestId, { success: false, contentItems: [{ type: 'inputText', text: `Not run. ${problem}` }] })
       return
     }
+    void this.tracker.begin()
     this.adminRequests.set(itemId, { requestId, command, reason })
     this.push({ kind: 'command', id: itemId, command, reason, status: 'awaiting-approval', risk: 'admin', output: null, exitCode: null })
   }
@@ -752,6 +810,7 @@ export class AgentSession extends EventEmitter {
     }
 
     setStatus('running')
+    await this.tracker.begin()
     const zh = this.lang === 'zh'
     const why = request.reason ? (zh ? `：${request.reason}` : `: ${request.reason}`) : zh ? '。' : '.'
     const result = await runAsAdmin(request.command, {

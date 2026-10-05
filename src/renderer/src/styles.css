@@ -1487,3 +1487,16 @@ p {
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
+
+/* History: what a conversation changed */
+.history-changes {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.history-undo {
+  white-space: nowrap;
+  margin-right: 8px;
+}

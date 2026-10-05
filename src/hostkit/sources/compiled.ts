@@ -25,6 +25,8 @@ export const cargo: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'install', name]),
+  reinstallCommand: (item, probe) =>
+    item.extra.origin ? null : command([probe.path, 'install', item.name, ...(item.version ? ['--version', item.version] : [])]),
   // Installing again replaces it with the newest version.
   upgradeCommand: (item, probe) => (item.extra.origin ? null : command([probe.path, 'install', item.name])),
   uninstallCommand: (item, probe) => command([probe.path, 'uninstall', item.name])
@@ -92,6 +94,8 @@ export const goInstall: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'install', name.includes('@') ? name : `${name}@latest`]),
+  reinstallCommand: (item, probe) =>
+    item.extra.module ? command([probe.path, 'install', `${item.extra.module}@${item.version && item.version !== '(devel)' ? item.version : 'latest'}`]) : null,
   upgradeCommand: (item, probe) => (item.extra.module ? command([probe.path, 'install', `${item.extra.module}@latest`]) : null),
   // `go install` has no uninstall; the tool is a single file.
   uninstallCommand: (item) => (item.location ? command(['/bin/rm', item.location]) : null)

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ConversationSummary, TimelineItem } from '../../shared/types'
+import type { ChangeRecord, ConversationSummary, TimelineItem } from '../../shared/types'
 
 // Every conversation is saved as it happens (one JSON file each), so nothing
 // is lost when the user switches to another one or quits.
@@ -20,6 +20,8 @@ export interface Conversation {
   transcript: string[]
   /** How much of the transcript has already been mined for memories. */
   memoryExtractedUpTo: number
+  /** What this conversation changed on the Mac, and how to undo it. */
+  changes: ChangeRecord[]
 }
 
 const TITLE_LENGTH = 48
@@ -33,6 +35,7 @@ export class ConversationStore {
       if (!file.endsWith('.json')) continue
       try {
         const conversation = JSON.parse(readFileSync(join(dir, file), 'utf8')) as Conversation
+        conversation.changes ??= []
         if (conversation.id) this.cache.set(conversation.id, conversation)
       } catch {
         // skip unreadable files
@@ -51,7 +54,8 @@ export class ConversationStore {
       threadId: null,
       timeline: [],
       transcript: [],
-      memoryExtractedUpTo: 0
+      memoryExtractedUpTo: 0,
+      changes: []
     }
     this.cache.set(conversation.id, conversation)
     return conversation
@@ -88,7 +92,9 @@ export class ConversationStore {
         title: c.title,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
-        preview: firstUserText(c)
+        preview: firstUserText(c),
+        changes: c.changes.length,
+        undoable: c.changes.filter((r) => !r.undone && r.undo).length
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }

@@ -26,6 +26,8 @@ await measureSize(inventory.items[0].location!) // bytes, on demand (big apps ta
 
 `loadInventory` runs all sources in parallel; each fails on its own (`status: 'error'`) without affecting the others. `checkUpdates: false` skips the checks for newer versions, which may need the network.
 
+Each item carries `commands.upgrade`, `commands.uninstall` and `commands.install` (installs this item again, the same version where the tool allows it, to undo a removal). `diffInventories(before, after)` lists what was added, removed or updated between two inventories; sources that failed in either one are left out of the comparison.
+
 An item that two sources both see (a Homebrew cask and its `.app` in `/Applications`) is listed once. The source that *claims* the path wins, because it knows how to update and remove it.
 
 ### Sources

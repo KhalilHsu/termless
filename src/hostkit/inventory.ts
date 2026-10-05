@@ -95,12 +95,13 @@ function finishItem(source: PackageSource, probe: SourceProbe, draft: ItemDraft)
     dependents: [],
     installedOnRequest: draft.installedOnRequest ?? true,
     extra: draft.extra ?? {},
-    commands: { upgrade: null, uninstall: null },
+    commands: { upgrade: null, uninstall: null, install: null },
     claims: draft.claims ?? []
   }
   item.commands = {
     upgrade: source.upgradeCommand?.(item, probe) ?? null,
-    uninstall: source.uninstallCommand?.(item, probe) ?? null
+    uninstall: source.uninstallCommand?.(item, probe) ?? null,
+    install: source.reinstallCommand?.(item, probe) ?? source.installCommand?.(item.name, probe) ?? null
   }
   return item
 }

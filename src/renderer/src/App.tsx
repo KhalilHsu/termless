@@ -71,6 +71,14 @@ export function App() {
     setView('assistant')
   }
 
+  // Undoing happens in the Assistant too: open the conversation and ask.
+  const undoConversation = async (id: string) => {
+    if (id !== agent.conversationId && assistantBusy && !window.confirm(t('history.switchConfirm'))) return
+    await window.termless.openConversation(id)
+    setView('assistant')
+    void window.termless.sendMessage(t('prompt.undo'), lang)
+  }
+
   const askAssistant = (prompt: string) => {
     setView('assistant')
     void window.termless.sendMessage(prompt, lang)
@@ -143,7 +151,12 @@ export function App() {
           )}
           {view === 'discover' && <ComingSoonView title={t('nav.discover')} body={t('discover.body')} />}
           {view === 'history' && (
-            <HistoryView conversations={conversations} currentId={agent.conversationId} onOpen={(id) => void openConversation(id)} />
+            <HistoryView
+              conversations={conversations}
+              currentId={agent.conversationId}
+              onOpen={(id) => void openConversation(id)}
+              onUndo={(id) => void undoConversation(id)}
+            />
           )}
         </div>
         <footer className={`statusbar is-${statusTone}`}>

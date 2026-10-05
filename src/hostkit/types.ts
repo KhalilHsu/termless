@@ -44,8 +44,8 @@ export interface InstalledItem {
   installedOnRequest: boolean
   /** Source-specific facts, e.g. { tap: 'homebrew/core' } or { bundleId: '…' }. */
   extra: Record<string, string>
-  /** How to update or remove it with the tool that installed it. */
-  commands: { upgrade: CommandSpec | null; uninstall: CommandSpec | null }
+  /** How to update or remove it with the tool that installed it, and how to install this version again after removing it. */
+  commands: { upgrade: CommandSpec | null; uninstall: CommandSpec | null; install: CommandSpec | null }
   /**
    * Paths on disk this item put there (e.g. the .app a Homebrew cask
    * installed). An item from another source at one of these paths is the
@@ -133,6 +133,8 @@ export interface PackageSource {
   /** Lists what it installed. Throw on failure; other sources still load. */
   list(ctx: SourceContext, probe: SourceProbe): Promise<ItemDraft[]>
   installCommand?(name: string, probe: SourceProbe): CommandSpec | null
+  /** Installs this item again, ideally the same version (used to undo a removal). Defaults to installCommand(name). */
+  reinstallCommand?(item: InstalledItem, probe: SourceProbe): CommandSpec | null
   upgradeCommand?(item: InstalledItem, probe: SourceProbe): CommandSpec | null
   uninstallCommand?(item: InstalledItem, probe: SourceProbe): CommandSpec | null
 }

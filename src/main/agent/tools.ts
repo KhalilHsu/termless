@@ -29,6 +29,13 @@ export const TOOL_SPECS = [
   },
   {
     type: 'function',
+    name: 'termless_list_changes',
+    description:
+      'List what Termless saw change on this Mac during this conversation (software installed, removed or updated; settings files created or edited), whether each has been undone, and the exact commands to undo it. Use it when the user wants to undo something.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    type: 'function',
     name: 'termless_diagnose_network',
     description:
       "Check this Mac's internet connection the way command-line tools see it: whether GitHub, Homebrew, npm, PyPI and OpenAI can be reached, why not (name lookup, refused, timed out, secure connection broken, proxy down), whether a Wi-Fi login page is in the way, the download speed, and how proxies are set up (System Settings vs. command-line tools). The user sees the result as a card. Use it when a download or install fails with a network error, or the user says the internet isn't working.",
@@ -156,6 +163,8 @@ export function describeToolCall(tool: string, args: any, lang: 'en' | 'zh'): st
       return zh ? '查看了已安装的软件' : 'Checked installed software'
     case 'termless_inspect_script':
       return zh ? '下载并检查了网上的脚本（没有运行）' : 'Downloaded and checked the script (did not run it)'
+    case 'termless_list_changes':
+      return zh ? '查看了这段对话做过的改动' : 'Looked up the changes made in this conversation'
     case 'termless_remember':
       return (zh ? '记住了：' : 'Remembered: ') + String(args?.fact ?? '')
     case 'termless_recall':

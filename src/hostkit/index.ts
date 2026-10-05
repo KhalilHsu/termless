@@ -41,3 +41,4 @@ export {
   SLOW_BYTES_PER_SECOND,
   type DiagnoseOptions
 } from './network.ts'
+export { diffInventories, isEmptyDiff, type InventoryDiff } from './diff.ts'

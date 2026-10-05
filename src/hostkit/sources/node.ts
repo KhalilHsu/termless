@@ -1,7 +1,7 @@
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { command, expectSuccess, which } from '../exec.ts'
-import type { ItemDraft, PackageSource, SourceContext } from '../types.ts'
+import type { InstalledItem, ItemDraft, PackageSource, SourceContext } from '../types.ts'
 
 // Global JavaScript packages: `npm install -g` and `pnpm add -g`.
 
@@ -53,6 +53,11 @@ export function nodePackageDraft(name: string, version: string | null, dir: stri
   }
 }
 
+/** name@1.2.3, to put back exactly the version that was there. */
+function withVersion(item: InstalledItem): string {
+  return item.version ? `${item.name}@${item.version}` : item.name
+}
+
 function isWritable(dir: string): boolean {
   try {
     accessSync(dir, constants.W_OK)
@@ -93,6 +98,7 @@ export const npm: PackageSource = {
   },
 
   installCommand: (name, probe) => npmCommand(probe.path, ['install', '--global', name]),
+  reinstallCommand: (item, probe) => npmCommand(probe.path, ['install', '--global', withVersion(item)]),
   upgradeCommand: (item, probe) => npmCommand(probe.path, ['install', '--global', `${item.name}@latest`]),
   uninstallCommand: (item, probe) => npmCommand(probe.path, ['uninstall', '--global', item.name])
 }
@@ -125,6 +131,7 @@ export const pnpm: PackageSource = {
   },
 
   installCommand: (name, probe) => command([probe.path, 'add', '--global', name]),
+  reinstallCommand: (item, probe) => command([probe.path, 'add', '--global', withVersion(item)]),
   upgradeCommand: (item, probe) => command([probe.path, 'add', '--global', `${item.name}@latest`]),
   uninstallCommand: (item, probe) => command([probe.path, 'remove', '--global', item.name])
 }

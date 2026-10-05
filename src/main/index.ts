@@ -7,7 +7,7 @@ import { ConversationStore } from './agent/conversations'
 import { MemoryStore } from './agent/memory'
 import { AgentSession } from './agent/session'
 import { getCodexStatus, setCodexHome } from './codex/detect'
-import { getInventory, getItemLocation, getItemSize, invalidateInventory } from './inventory'
+import { getInventory, getItemLocation, getItemSize, invalidateInventory, snapshotInventory } from './inventory'
 import { getSetupStatus, installCodex, installHomebrew, openCommandLineToolsInstaller, signInToCodex } from './setup'
 
 // Development / testing: keep Termless's data somewhere else.
@@ -30,6 +30,8 @@ const agent = new AgentSession({
   memory,
   conversations,
   getInventory: () => shellPathReady.then(() => getInventory()),
+  snapshotInventory: () => shellPathReady.then(() => snapshotInventory()),
+  backupsDir: join(app.getPath('userData'), 'backups'),
   workspaceDir: join(app.getPath('userData'), 'workspace'),
   appVersion: app.getVersion()
 })

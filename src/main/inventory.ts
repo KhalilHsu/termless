@@ -15,6 +15,11 @@ export function getInventory(fresh = false): Promise<Inventory> {
   return cache.value
 }
 
+/** What is installed right now, without asking about updates (fast, never cached). Used to see what a command changed. */
+export function snapshotInventory(): Promise<Inventory> {
+  return loadInventory({ sources: defaultSources(), checkUpdates: false })
+}
+
 export function invalidateInventory(): void {
   cache = null
 }
