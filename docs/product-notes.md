@@ -186,6 +186,7 @@
 
 ## 12. 进度
 
+- 2026-10-05（第二次）：**P0 第 0.4 项商标检索完成**（中国待补），结论和建议见 [trademark-search.md](trademark-search.md)。0.1～0.3 暂缓：0.1 / 0.2 需要 macOS 虚拟机，0.3 需要付费的 Apple Developer 账号。
 - 2026-10-05：**MVP 剩余两项完成：管理员权限 + 已安装支持全部来源**。
   - 新的独立模块 hostkit（`src/hostkit/`）：负责本机安装情况的检测、描述和管理命令，供 Termless 和以后的其他项目使用（见 10.3）。有自己的 README 和单元测试（`npm test`，用录制的命令输出测试各来源的解析，不需要本机装有这些工具）。
   - 已安装 Tab：显示 9 类来源的内容；按「应用 / 命令行工具 / 可更新」筛选，并可按安装方式筛选；每一项标明是用什么装的、提供哪些命令、占用多少空间，可以在访达中显示；读取失败的来源单独提示；没装 Homebrew 时可直接安装。更新、卸载照旧交给助手，应用的卸载是「移到废纸篓」，可以放回。
@@ -217,7 +218,9 @@
 ## 13. 未决问题
 
 - ✅ 技术栈：Electron + TypeScript
-- ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。正式发布前需做 USPTO / EUIPO 商标检索
+- ✅ 产品名：**Termless**（寓意：不用终端）。termless.dev 已被一个 TUI 测试库占用；termless.app / termless.ai 查询时未注册。
+  - 2026-10-05 已做商标初步检索，详见 [trademark-search.md](trademark-search.md)：美国、欧盟、英国及 WIPO 覆盖的约 90 个局里，没有在用的 TERMLESS 商标；最近似的是第 9 / 42 类的 TERMLY（英国、澳大利亚）。实际风险最大的是同名开发者工具 termless.dev（npm `termless`，在先使用但没有注册商标）。中国还需要你本人检索。
+  - ❓ 保留这个名字（尽快注册 termless.app，并在美国、欧盟申请第 9 / 42 类商标），还是趁发布前改名？
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
 - ✅ 订阅条款：已调研（见 10.2.1），Claude、Gemini/Antigravity 均不可行，第一版只支持 Codex
@@ -230,10 +233,10 @@
 
 | # | 事项 | 来源 | 做法 | 怎么算完成 |
 |---|---|---|---|---|
-| 0.1 | **干净环境实测** | 第 8 节成功标准、12 节 | 在 macOS 虚拟机（Apple 芯片可用 Virtualization.framework，例如 UTM / tart）里，从零开始：下载 App → 引导里装好 Homebrew → 装 Codex → 登录 → 完成一篇教程 | 全程不打开终端、10 分钟内装好第一个工具；把过程录屏，问题记成 issue |
-| 0.2 | **典型教程测试集** | 第 8 节「能完成一篇典型教程」 | 挑 10 篇真实的教程 / README（yt-dlp、ffmpeg、ComfyUI、Ollama、一个 Python CLI、一个 npm CLI 等），写成可重复的端到端场景，定期跑 | ≥ 8 篇不用人插手就能完成；失败的写清原因 |
-| 0.3 | **正式签名、公证和自动更新** | 第 1 节目标（真实用户） | Apple Developer ID 签名 + notarize；用 electron-updater 走 GitHub Releases 自动更新 | 从网上下载后能正常打开，Gatekeeper 不报警；能自动升级到新版本 |
-| 0.4 | **商标检索** | 13 节 | 正式发布前做 USPTO / EUIPO 检索 | 有结论；如果冲突就改名 |
+| 0.1 | ⏸ **干净环境实测**（2026-10-05 决定暂缓） | 第 8 节成功标准、12 节 | 在 macOS 虚拟机（Apple 芯片可用 Virtualization.framework，例如 UTM / tart）里，从零开始：下载 App → 引导里装好 Homebrew → 装 Codex → 登录 → 完成一篇教程 | 全程不打开终端、10 分钟内装好第一个工具；把过程录屏，问题记成 issue |
+| 0.2 | ⏸ **典型教程测试集**（暂缓，同上） | 第 8 节「能完成一篇典型教程」 | 挑 10 篇真实的教程 / README（yt-dlp、ffmpeg、ComfyUI、Ollama、一个 Python CLI、一个 npm CLI 等），写成可重复的端到端场景，定期跑 | ≥ 8 篇不用人插手就能完成；失败的写清原因 |
+| 0.3 | ⏸ **正式签名、公证和自动更新**（暂缓：需要付费 Apple Developer 账号和 Developer ID 证书） | 第 1 节目标（真实用户） | Apple Developer ID 签名 + notarize；用 electron-updater 走 GitHub Releases 自动更新 | 从网上下载后能正常打开，Gatekeeper 不报警；能自动升级到新版本 |
+| 0.4 | ✅ **商标检索**（2026-10-05，中国待补） | 13 节 | 检索 USPTO、EUIPO、UKIPO、WIPO 全球品牌数据库，以及 npm / GitHub / 域名，结果见 [trademark-search.md](trademark-search.md) | 有结论：没有在册的同名商标；是否改名待你决定（13 节）；中国商标网需要你本人检索 |
 
 ### P1：补齐产品原则
 
