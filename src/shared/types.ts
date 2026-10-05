@@ -2,9 +2,19 @@
 
 // What is installed on this Mac comes from hostkit (src/hostkit), Termless's
 // standalone module for package managers; its types are plain data.
-import type { HomebrewInstallStep, HomebrewSupport, Inventory } from '../hostkit/types'
+import type { HomebrewInstallStep, HomebrewSupport, Inventory, ScriptReport } from '../hostkit/types'
 
-export type { CommandSpec, HomebrewInstallStep, InstalledItem, Inventory, ItemKind, SourceReport } from '../hostkit/types'
+export type {
+  CommandSpec,
+  HomebrewInstallStep,
+  InstalledItem,
+  Inventory,
+  ItemKind,
+  ScriptFinding,
+  ScriptFindingId,
+  ScriptReport,
+  SourceReport
+} from '../hostkit/types'
 
 export interface CodexStatus {
   installed: boolean
@@ -53,10 +63,13 @@ export type TimelineItem =
       kind: 'command'
       id: string
       command: string
-      status: 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined' | 'stopped'
+      /** checking: a script from the internet is being downloaded and looked at. blocked: Termless refused it. */
+      status: 'checking' | 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined' | 'stopped' | 'blocked'
       risk: CommandRisk
       /** Why it is needed, when the agent said so (administrator requests). */
       reason?: string
+      /** What Termless found in the script a command would download and run. */
+      script?: ScriptReport
       output: string | null
       exitCode: number | null
     }

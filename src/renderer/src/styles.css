@@ -908,8 +908,89 @@ p {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 15%, transparent), var(--shadow);
 }
 
-.command-card.is-failed .card-status {
+.command-card.is-failed .card-status,
+.command-card.is-blocked .card-status {
   color: var(--red);
+}
+
+.command-card.is-blocked {
+  border-color: var(--red);
+}
+
+/* What Termless found in a script from the internet */
+.script-check {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  font-size: 13px;
+}
+
+.script-check.is-blocked {
+  background: color-mix(in srgb, var(--red) 8%, var(--bg));
+}
+
+.script-source {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.script-source .card-label {
+  margin: 0;
+  min-width: 64px;
+}
+
+.script-findings {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.script-findings li {
+  position: relative;
+  padding-left: 16px;
+}
+
+.script-findings li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.5em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.script-findings li.is-warn::before {
+  background: var(--accent);
+}
+
+.script-findings li.is-block {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.script-findings li.is-block::before {
+  background: var(--red);
+}
+
+.script-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+}
+
+.script-note.is-blocked {
+  color: var(--red);
+}
+
+.script-check .command-toggle {
+  margin-top: 8px;
 }
 
 .command-card.is-declined .card-status,

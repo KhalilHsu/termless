@@ -69,7 +69,7 @@ export function AssistantView({
     (item) => (item.kind === 'command' && item.status === 'awaiting-approval') || (item.kind === 'question' && item.answer === null && !item.expired)
   )
   const showThinking =
-    busy && !waitingOnUser && !(last?.kind === 'agent' && last.streaming && last.text) && !(last?.kind === 'command' && last.status === 'running')
+    busy && !waitingOnUser && !(last?.kind === 'agent' && last.streaming && last.text) && !(last?.kind === 'command' && (last.status === 'running' || last.status === 'checking'))
 
   return (
     <div className="view">

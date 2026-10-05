@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { mkdirSync } from 'node:fs'
-import { adminCommandProblem, runAsAdmin } from '../../hostkit'
+import { adminCommandProblem, inspectRemoteScript, runAsAdmin } from '../../hostkit'
 import type {
   AgentState,
   ApprovalDecision,
@@ -17,7 +17,7 @@ import type { Conversation, ConversationStore } from './conversations'
 import { collectEnvironment } from './environment'
 import { buildInstructions, MEMORY_EXTRACTION_INSTRUCTIONS } from './instructions'
 import type { MemoryStore } from './memory'
-import { describeToolCall, runTool, TOOL_SPECS } from './tools'
+import { describeToolCall, FINDING_DESCRIPTIONS, runTool, TOOL_SPECS } from './tools'
 
 const MAX_OUTPUT_CHARS = 20_000
 const ADMIN_TOOL = 'termless_run_as_admin'
@@ -208,7 +208,7 @@ export class AgentSession extends EventEmitter {
     // Anything left waiting when the conversation was last open can't be
     // acted on any more.
     target.timeline = target.timeline.map((item) => {
-      if (item.kind === 'command' && (item.status === 'awaiting-approval' || item.status === 'running')) return { ...item, status: 'stopped' }
+      if (item.kind === 'command' && (item.status === 'awaiting-approval' || item.status === 'running' || item.status === 'checking')) return { ...item, status: 'stopped' }
       if (item.kind === 'question' && item.answer === null) return { ...item, expired: true }
       if (item.kind === 'agent' && item.streaming) return { ...item, streaming: false }
       return item
@@ -456,7 +456,7 @@ export class AgentSession extends EventEmitter {
     }
     this.adminRequests.clear()
     for (const item of this.state.timeline) {
-      if (item.kind === 'command' && item.status === 'running') this.updateItem(item.id, (i) => (i.kind === 'command' ? { ...i, status: 'stopped' } : i))
+      if (item.kind === 'command' && (item.status === 'running' || item.status === 'checking')) this.updateItem(item.id, (i) => (i.kind === 'command' ? { ...i, status: 'stopped' } : i))
       if (item.kind === 'question' && item.answer === null) this.updateItem(item.id, (i) => (i.kind === 'question' ? { ...i, expired: true } : i))
     }
     this.answers.clear()
@@ -513,6 +513,12 @@ export class AgentSession extends EventEmitter {
         break
 
       case 'commandExecution': {
+        // A script Termless refused stays marked as blocked, not just declined.
+        const previous = this.findItem(item.id)
+        if (previous?.kind === 'command' && previous.status === 'blocked') {
+          this.current?.transcript.push(`Termless blocked: ${displayCommand(item.command)}`)
+          break
+        }
         const status =
           item.status === 'declined'
             ? 'declined'
@@ -567,6 +573,11 @@ export class AgentSession extends EventEmitter {
         if (!this.findItem(itemId)) {
           const command = method.startsWith('item/fileChange') ? describeFileChanges([], this.lang) : displayCommand(params.command ?? '')
           this.push({ kind: 'command', id: itemId, command, status: 'running', risk: method.startsWith('item/fileChange') ? 'change' : classifyCommand(command), output: null, exitCode: null })
+        }
+        const item = this.findItem(itemId)
+        if (item?.kind === 'command' && item.risk === 'internet-script') {
+          await this.checkScriptBeforeApproval(id, itemId, item.command)
+          return
         }
         this.approvals.set(itemId, { requestId: id })
         this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status: 'awaiting-approval' } : item))
@@ -629,6 +640,37 @@ export class AgentSession extends EventEmitter {
         // Requests Termless does not support are refused rather than left hanging.
         client.respondError(id, `Termless does not support ${method}`)
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Scripts from the internet
+
+  /**
+   * Downloads (never runs) the script and shows what it does on the card
+   * before the user decides. Clearly malicious scripts are refused outright.
+   */
+  private async checkScriptBeforeApproval(requestId: number | string, itemId: string, command: string): Promise<void> {
+    this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status: 'checking' } : item))
+    const report = await inspectRemoteScript(command).catch(() => null)
+    const item = this.findItem(itemId)
+    // The turn may have been stopped or the conversation switched meanwhile.
+    if (item?.kind !== 'command' || item.status !== 'checking' || !this.client) return
+
+    if (report?.verdict === 'blocked') {
+      this.client.respond(requestId, { decision: 'decline' })
+      this.updateItem(itemId, (i) => (i.kind === 'command' ? { ...i, status: 'blocked', script: report } : i))
+      // The agent would otherwise only hear "declined" and may think the user said no.
+      if (this.threadId && this.turnId) {
+        const found = report.findings.filter((f) => f.severity === 'block').map((f) => FINDING_DESCRIPTIONS[f.id])
+        const text = `[Message from Termless, not from the user] Termless blocked that command before it ran: the script it downloads (checked just now, at the moment it would have run) ${found.join('; ')}. If you looked at this script earlier and it seemed fine, it has changed since. Tell the user plainly that Termless blocked it and why, and do not try to run it in any other way.`
+        void this.client
+          .request('turn/steer', { threadId: this.threadId, expectedTurnId: this.turnId, input: [{ type: 'text', text, text_elements: [] }] })
+          .catch(() => {})
+      }
+      return
+    }
+    this.approvals.set(itemId, { requestId })
+    this.updateItem(itemId, (i) => (i.kind === 'command' ? { ...i, status: 'awaiting-approval', script: report ?? undefined } : i))
   }
 
   // -------------------------------------------------------------------------

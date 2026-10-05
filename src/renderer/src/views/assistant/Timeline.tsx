@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { TimelineItem } from '../../../../shared/types'
+import type { ScriptReport, TimelineItem } from '../../../../shared/types'
 import { useI18n } from '../../i18n'
 import { CheckIcon, TerminalIcon } from '../../icons'
 import { Markdown } from '../../Markdown'
@@ -58,12 +58,22 @@ function CommandCard({ item }: { item: CommandItem }) {
     case 'awaiting-approval':
       statusLine = t(`card.risk.${item.risk}`)
       break
+    case 'checking':
+      statusLine = (
+        <>
+          <span className="spinner spinner-small" /> {t('card.checkingScript')}
+        </>
+      )
+      break
     case 'running':
       statusLine = (
         <>
           <span className="spinner spinner-small" /> {t('card.running')}
         </>
       )
+      break
+    case 'blocked':
+      statusLine = t('card.blocked')
       break
     case 'done':
       statusLine = (
@@ -96,6 +106,7 @@ function CommandCard({ item }: { item: CommandItem }) {
         </button>
       </div>
       {item.reason && <p className="card-reason">{item.reason}</p>}
+      {item.script && <ScriptCheck report={item.script} />}
       {awaiting && item.risk === 'admin' && <p className="card-reason muted">{t('card.adminHint')}</p>}
       {open && (
         <div className="card-details">
@@ -122,6 +133,62 @@ function CommandCard({ item }: { item: CommandItem }) {
             {t('card.deny')}
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Where a script from the internet comes from and what Termless found in it. */
+function ScriptCheck({ report }: { report: ScriptReport }) {
+  const { t } = useI18n()
+  const [showScript, setShowScript] = useState(false)
+  const source = report.source
+  return (
+    <div className={`script-check is-${report.verdict}`}>
+      <div className="script-source">
+        <span className="card-label">{t('script.source')}</span>
+        {source ? (
+          <span>
+            <span className="mono">{source.host}</span>
+            {' · '}
+            {source.knownAs ? t('script.known', { name: source.knownAs }) : <strong>{t('script.unknown')}</strong>}
+            {!source.https && <strong> · {t('script.http')}</strong>}
+          </span>
+        ) : (
+          <span>{t('script.embedded')}</span>
+        )}
+      </div>
+      {report.redirectedTo && (
+        <div className="script-source">
+          <span className="card-label">{t('script.redirected')}</span>
+          <span className="mono">{report.redirectedTo.host}</span>
+        </div>
+      )}
+      {report.error ? (
+        <p className="script-note">{t('script.downloadFailed', { error: report.error })}</p>
+      ) : report.findings.length === 0 ? (
+        <p className="script-note">{t('script.nothingFound')}</p>
+      ) : (
+        <ul className="script-findings">
+          {report.findings.map((f) => (
+            <li key={f.id} className={`is-${f.severity}`} title={f.evidence}>
+              {t(`finding.${f.id}`)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {report.verdict === 'blocked' && <p className="script-note is-blocked">{t('script.blockedNote')}</p>}
+      {report.text && (
+        <>
+          <button className="command-toggle" onClick={() => setShowScript(!showScript)} aria-expanded={showScript}>
+            {showScript ? t('script.hide') : t('script.show')}
+          </button>
+          {showScript && (
+            <pre className="md-code card-output">
+              <code>{report.text}</code>
+            </pre>
+          )}
+        </>
       )}
     </div>
   )

@@ -1,4 +1,5 @@
-import type { InstalledItem, Inventory } from '../../shared/types'
+import { inspectRemoteScript } from '../../hostkit'
+import type { InstalledItem, Inventory, ScriptFindingId, ScriptReport } from '../../shared/types'
 import type { MemoryStore } from './memory'
 
 // Tools Termless gives the agent (Codex "dynamic tools"). They are handled
@@ -23,6 +24,20 @@ export const TOOL_SPECS = [
           description: 'Optional: only items installed by this tool.'
         }
       },
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'termless_inspect_script',
+    description:
+      'Download (never run) the script that a command like `curl … | sh`, `bash -c "$(curl …)"` or `bash <(curl …)` would run, and report where it comes from, whether the publisher is well known, what risky things it does (administrator rights, deleting files, editing shell settings, background services, reading passwords…), and its text. Use it before running any script from the internet, then explain it to the user in plain words.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The full command, or just the script URL.' }
+      },
+      required: ['command'],
       additionalProperties: false
     }
   },
@@ -132,6 +147,8 @@ export function describeToolCall(tool: string, args: any, lang: 'en' | 'zh'): st
   switch (tool) {
     case 'termless_get_inventory':
       return zh ? '查看了已安装的软件' : 'Checked installed software'
+    case 'termless_inspect_script':
+      return zh ? '下载并检查了网上的脚本（没有运行）' : 'Downloaded and checked the script (did not run it)'
     case 'termless_remember':
       return (zh ? '记住了：' : 'Remembered: ') + String(args?.fact ?? '')
     case 'termless_recall':
@@ -173,6 +190,12 @@ export async function runTool(
       const filter = [q && `matching "${q}"`, source && `from ${source}`].filter(Boolean).join(' ')
       const header = `Sources: ${sources}.\n${matches.length} of ${inventory.items.length} items${filter ? ` ${filter}` : ''}:`
       return { success: true, text: matches.length ? `${header}\n${lines.join('\n')}${more}` : `Sources: ${sources}.\nNothing installed ${filter || 'yet'}.` }
+    }
+
+    case 'termless_inspect_script': {
+      const report = await inspectRemoteScript(String(args?.command ?? ''))
+      if (!report) return { success: false, text: 'That is not a command that runs a script from the internet, and not a script URL.' }
+      return { success: true, text: describeScriptReport(report) }
     }
 
     case 'termless_remember': {
@@ -227,4 +250,47 @@ function describeItem(item: InstalledItem): string {
     item.commands.uninstall ? `remove: \`${item.commands.uninstall.display}\`${item.commands.uninstall.needsAdmin ? ' (needs administrator)' : ''}` : ''
   ].filter(Boolean)
   return `- ${name} [${facts.join(', ')}]${item.description ? `: ${item.description}` : ''}${commands.length ? `; ${commands.join('; ')}` : ''}`
+}
+
+/** What each finding means, for the agent. The app shows its own translated wording. */
+export const FINDING_DESCRIPTIONS: Record<ScriptFindingId, string> = {
+  admin: 'asks for administrator rights (sudo)',
+  'delete-files': 'deletes files or folders',
+  'delete-home': "deletes the user's home folder or the whole disk",
+  'shell-profile': "changes the user's shell settings (e.g. ~/.zshrc)",
+  'background-service': 'installs something that keeps running in the background or starts at login',
+  'downloads-more': 'downloads more files from the internet',
+  keychain: 'reads saved passwords from the macOS keychain',
+  'uploads-private-files': 'sends private files (SSH keys, keychain, browser data…) to a server',
+  'uploads-data': 'sends data to a server',
+  'disables-protection': 'turns off macOS security protections',
+  'removes-quarantine': "removes macOS's safety check from downloaded apps",
+  'password-prompt': 'shows a fake password dialog',
+  'remote-shell': 'gives someone else remote control of this Mac',
+  obfuscated: 'hides what it does (encoded code)',
+  'hosts-file': 'changes /etc/hosts (which websites addresses point to)',
+  'insecure-download': 'is downloaded over plain http, which can be tampered with'
+}
+
+/** The agent's view of a script report. */
+export function describeScriptReport(report: ScriptReport): string {
+  const source = report.source
+    ? `${report.source.host} — ${report.source.knownAs ? `well-known publisher: ${report.source.knownAs}` : 'NOT a publisher Termless recognizes'}${report.source.https ? '' : ' (plain http!)'}`
+    : 'embedded in the command (base64)'
+  const lines = [
+    `Source: ${source}`,
+    report.redirectedTo ? `Redirected to: ${report.redirectedTo.host}${report.redirectedTo.knownAs ? ` (${report.redirectedTo.knownAs})` : ''}` : '',
+    report.error ? `Could not download it: ${report.error}` : `Size: ${report.bytes} bytes${report.truncated ? ' (only the start was checked)' : ''}`,
+    `Verdict: ${
+      report.verdict === 'blocked'
+        ? 'BLOCKED — clearly malicious; Termless will refuse to run it. Warn the user and do not try to run it another way.'
+        : report.verdict === 'caution'
+          ? 'caution — explain the points below before the user decides'
+          : 'nothing unusual found'
+    }`,
+    report.findings.length ? 'What it does:' : 'No risky actions found.',
+    ...report.findings.map((f) => `- [${f.severity}] ${FINDING_DESCRIPTIONS[f.id]} — e.g. \`${f.evidence}\``),
+    report.text ? `\nScript${report.text.length > 12_000 ? ' (first 12,000 characters)' : ''}:\n${report.text.slice(0, 12_000)}` : ''
+  ]
+  return lines.filter(Boolean).join('\n')
 }

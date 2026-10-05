@@ -42,7 +42,7 @@ TERMLESS_VIEW=installed TERMLESS_CAPTURE=/tmp/termless.png npx electron .
 
 ### End-to-end test
 
-`scripts/e2e.sh` launches the app with a throwaway data folder and drives it end to end: approval cards (accepted and declined), a question card, memory, the inventory from every source, the administrator card (declined only, so no password dialog appears) and a refused administrator command, History (titles, reopening and continuing a conversation, switching while a card is waiting), restarting the app to resume a real Codex thread, the fallback when a thread is gone, and deleting everything. It only creates small files inside the throwaway folder, and deletes every Codex thread it created.
+`scripts/e2e.sh [core|safety]` launches the app with a throwaway data folder and drives it end to end (all suites by default; it exits non-zero if any check fails). The **core** suite covers approval cards (accepted and declined), a question card, memory, the inventory from every source, the administrator card (declined only, so no password dialog appears) and a refused administrator command, History (titles, reopening and continuing a conversation, switching while a card is waiting), restarting the app to resume a real Codex thread, the fallback when a thread is gone, and deleting everything. The **safety** suite serves scripts from a local web server to check that scripts from the internet are inspected before they run, that malicious ones are refused, and that a script swapped after the agent looked at it is blocked by Termless itself. The suites only create small files inside the throwaway folder, decline every risky card, and delete every Codex thread they created.
 
 ### How the Assistant works
 

@@ -75,6 +75,18 @@ Rules for sources:
 - Keep the parsing in a pure exported function (`parseXxx(stdout)`) and test it with recorded output in `test/`.
 - If the source knows which paths on disk an item installed, set `claims`, so duplicates are merged.
 
+### Scripts from the internet
+
+```ts
+import { detectRemoteScript, inspectRemoteScript } from './hostkit'
+
+detectRemoteScript('curl -fsSL https://sh.rustup.rs | sh') // { url, inline: null, interpreter: 'sh' }
+const report = await inspectRemoteScript('bash -c "$(curl -fsSL https://example.com/x.sh)"')
+// { source: { host, https, knownAs }, findings: [{ id, severity, evidence }], verdict: 'ok' | 'caution' | 'blocked', text, sha256, … }
+```
+
+It recognises `curl … | sh`, `bash -c "$(curl …)"`, `bash <(curl …)`, pipes into python / node / ruby / perl, and base64 payloads piped into a shell. It **downloads the script without running it** (512 KB cap, follows redirects and reports the final host), names well-known publishers, and checks the text statically: `info` (edits shell profile, downloads more), `warn` (sudo, deletes files, background services, removes quarantine, uploads data, obfuscation, /etc/hosts, plain http) and `block` (reads the keychain, uploads private files, remote shell, fake password dialog, disables macOS protections, deletes the home folder). It is a quick screen, not a sandbox: a clean report doesn't prove a script is safe.
+
 ### Administrator commands
 
 ```ts

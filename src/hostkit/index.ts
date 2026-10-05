@@ -21,3 +21,10 @@ export {
   HOMEBREW_TEAM_IDS,
   type HomebrewInstallOptions
 } from './bootstrap/homebrew.ts'
+export {
+  detectRemoteScript,
+  describeSource,
+  analyzeScript,
+  inspectRemoteScript,
+  type InspectOptions
+} from './remoteScript.ts'

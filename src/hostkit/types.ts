@@ -161,3 +161,70 @@ export type HomebrewInstallResult =
   | { status: 'ok'; brewPath: string; commandLineTools: boolean }
   | { status: 'cancelled' }
   | { status: 'failed'; step: HomebrewInstallStep | 'checking'; message: string }
+
+// ---------------------------------------------------------------------------
+// Scripts from the internet (remoteScript.ts)
+
+export type ScriptFindingId =
+  | 'admin'
+  | 'delete-files'
+  | 'delete-home'
+  | 'shell-profile'
+  | 'background-service'
+  | 'downloads-more'
+  | 'keychain'
+  | 'uploads-private-files'
+  | 'uploads-data'
+  | 'disables-protection'
+  | 'removes-quarantine'
+  | 'password-prompt'
+  | 'remote-shell'
+  | 'obfuscated'
+  | 'hosts-file'
+  | 'insecure-download'
+
+/** info: worth knowing. warn: the user should think twice. block: clearly malicious; never run. */
+export type FindingSeverity = 'info' | 'warn' | 'block'
+
+export interface ScriptFinding {
+  id: ScriptFindingId
+  severity: FindingSeverity
+  /** The line that triggered it, shortened. */
+  evidence: string
+}
+
+export interface RemoteScriptCommand {
+  /** Where the script is downloaded from; null when it is embedded (base64). */
+  url: string | null
+  /** Decoded script text for embedded payloads. */
+  inline: string | null
+  /** Program that would run it: sh, bash, python3… */
+  interpreter: string
+}
+
+export interface ScriptSource {
+  host: string
+  https: boolean
+  /** Name of a well-known publisher, e.g. "Homebrew", or null when unknown. */
+  knownAs: string | null
+}
+
+export interface ScriptReport {
+  url: string | null
+  /** After redirects. */
+  finalUrl: string | null
+  source: ScriptSource | null
+  /** Source of the final URL, when a redirect led somewhere else. */
+  redirectedTo: ScriptSource | null
+  interpreter: string
+  bytes: number
+  sha256: string | null
+  findings: ScriptFinding[]
+  /** blocked: at least one finding with severity 'block'. */
+  verdict: 'ok' | 'caution' | 'blocked'
+  /** The script (possibly shortened), for people who want to read it. */
+  text: string
+  truncated: boolean
+  /** Why the script could not be downloaded. */
+  error: string | null
+}

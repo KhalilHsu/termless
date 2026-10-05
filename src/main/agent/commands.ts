@@ -1,3 +1,4 @@
+import { detectRemoteScript } from '../../hostkit'
 import type { CommandRisk } from '../../shared/types'
 
 /**
@@ -17,13 +18,15 @@ export function displayCommand(raw: string): string {
   return inner
 }
 
-/** Rough risk level used to colour the confirmation card. Most serious wins. */
+/**
+ * Rough risk level used to colour the confirmation card. Most serious wins;
+ * a script from the internet comes first because its card shows what
+ * Termless found inside it (even when it also uses sudo).
+ */
 export function classifyCommand(command: string): CommandRisk {
   const c = command.toLowerCase()
+  if (detectRemoteScript(command)) return 'internet-script'
   if (/\bsudo\b/.test(c)) return 'admin'
-  if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b/.test(c) || /\b(ba|z)?sh\s+-c\s+["']?\$\((curl|wget)/.test(c)) {
-    return 'internet-script'
-  }
   if (/\b(rm|rmdir|uninstall|remove|unlink|trash)\b/.test(c) || /\bbrew\s+(uninstall|rm|remove|cleanup)\b/.test(c)) {
     return 'remove'
   }

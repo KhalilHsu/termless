@@ -8,7 +8,7 @@
 
 - `npm run dev` 开发运行；`npm run typecheck` 类型检查；`npm test` hostkit 单元测试；`npm run build` 构建
 - 自测截图：`npm run build && TERMLESS_VIEW=installed TERMLESS_CAPTURE=<path>.png npx electron .`
-- 助手 / 历史端到端测试：`scripts/e2e.sh`（隔离的数据目录，只做无害操作；结束时删除它创建的所有 Codex 线程）
+- 端到端测试：`scripts/e2e.sh [core|safety]`（默认全部；隔离的数据目录，只做无害操作，有风险的卡片一律点「不允许」；结束时删除它创建的所有 Codex 线程；任一检查失败则以非零状态退出）。套件在 `scripts/e2e/`，公共操作在 `lib.mjs`
 - 打包并安装到本机：`npm run install:mac`（打包、ad-hoc 签名、替换 `/Applications/Termless.app`，并删除 `release/` 里的产物，避免启动台出现多个 Termless）。测试用的临时 .app 副本用完必须删除
 - 结构：`src/hostkit`（独立模块：本机安装情况的检测与管理命令、管理员权限、安装 Homebrew；不依赖 Electron 和 Termless，供其他项目复用，见其 README）、`src/main`（主进程、清单缓存、setup）、`src/main/codex`（Codex 检测、app-server JSON-RPC 客户端）、`src/main/agent`（会话、对话保存 `conversations.ts`、注入的规则、自定义工具、记忆）、`src/preload`（`window.termless` 桥）、`src/shared`（类型）、`src/renderer`（React UI，中英文案在 `i18n.tsx`）
 - 产品约定：聊天只在助手里进行；历史 Tab 只列出对话，点开后切到助手继续。
