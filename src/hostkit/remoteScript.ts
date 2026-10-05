@@ -54,6 +54,15 @@ export function detectRemoteScript(command: string): RemoteScriptCommand | null 
   return null
 }
 
+/**
+ * Just the download half (`curl -fsSL https://…`, maybe `-o install.sh`): agents
+ * often pass that when asking what a script does. Inspect what it fetches.
+ */
+function downloadOnly(command: string): RemoteScriptCommand | null {
+  const url = FETCHER.test(command) ? command.match(URL_RE)?.[0] : undefined
+  return url ? { url, inline: null, interpreter: 'sh' } : null
+}
+
 /** Splits on ; && || but keeps single pipes together. */
 function splitPipelines(command: string): string[] {
   return command.split(/;|&&|\|\|/).map((s) => s.trim()).filter(Boolean)
@@ -191,9 +200,8 @@ const MAX_TEXT_CHARS = 40_000
 
 /** Downloads (never runs) the script a command would run, and reports on it. Accepts a command or a URL. */
 export async function inspectRemoteScript(commandOrUrl: string, options: InspectOptions = {}): Promise<ScriptReport | null> {
-  const detected = /^https?:\/\/\S+$/.test(commandOrUrl.trim())
-    ? { url: commandOrUrl.trim(), inline: null, interpreter: 'sh' }
-    : detectRemoteScript(commandOrUrl)
+  const input = commandOrUrl.trim()
+  const detected = /^https?:\/\/\S+$/.test(input) ? { url: input, inline: null, interpreter: 'sh' } : (detectRemoteScript(input) ?? downloadOnly(input))
   if (!detected) return null
 
   const report: ScriptReport = {

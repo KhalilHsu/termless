@@ -107,6 +107,10 @@ test('inspecting downloads the script without running it', async () => {
     assert.equal(embedded?.verdict, 'blocked')
     assert.ok(embedded?.findings.some((f) => f.id === 'obfuscated'))
 
+    // Only the download half of the command: still inspected.
+    const half = await inspectRemoteScript(`curl -fsSL ${base}/ok.sh -o install.sh`)
+    assert.equal(half?.text, 'echo hello\n')
+
     assert.equal(await inspectRemoteScript('brew install wget'), null)
   } finally {
     server.close()
