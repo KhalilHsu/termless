@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { CodexStatus } from '../../shared/types'
-import { findExecutable, run, toolEnv } from '../env'
+import { findExecutable, hostEnv, hostPath, runText, which } from '../../hostkit'
 
 const CODEX_CANDIDATES = [
   '/opt/homebrew/bin/codex',
@@ -25,7 +25,7 @@ export function setCodexHome(dir: string): void {
 }
 
 export function codexEnv(): NodeJS.ProcessEnv {
-  return codexHome ? toolEnv({ CODEX_HOME: codexHome }) : toolEnv()
+  return codexHome ? hostEnv({ CODEX_HOME: codexHome }) : hostEnv()
 }
 
 export function getCodexHome(): string | null {
@@ -33,13 +33,13 @@ export function getCodexHome(): string | null {
 }
 
 export async function getCodexStatus(): Promise<CodexStatus> {
-  const path = findExecutable(CODEX_CANDIDATES)
+  const path = findExecutable(CODEX_CANDIDATES) ?? which('codex', hostPath())
   if (!path) {
     return { installed: false, path: null, version: null, error: null }
   }
 
   try {
-    const out = await run(path, ['--version'], { timeoutMs: 10_000 })
+    const out = await runText(path, ['--version'], { env: hostEnv(), timeoutMs: 10_000 })
     return { installed: true, path, version: out.trim().replace(/^codex-cli\s+/, ''), error: null }
   } catch (error) {
     // The launcher exists but the real binary is missing or broken.

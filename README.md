@@ -4,7 +4,7 @@ A macOS app for people who don't use the command line.
 
 When a tutorial, a GitHub README, or an AI tells you to "open Terminal and type…", hand it to Termless instead. It explains in plain language what will happen, asks before changing anything, and gets it done for you — powered by the AI agent you already use (currently Codex CLI).
 
-> Status: early planning. See [docs/product-notes.md](docs/product-notes.md) (in Chinese) for the product and technical plan.
+> Status: MVP complete, not yet released. See [docs/product-notes.md](docs/product-notes.md) (in Chinese) for the product and technical plan and what comes next.
 
 ## Development
 
@@ -14,6 +14,7 @@ Requirements: macOS, Node.js 20+.
 npm install
 npm run dev        # run with hot reload
 npm run typecheck
+npm test           # hostkit unit tests
 npm run build      # production build into out/
 npm start          # run the production build
 npm run install:mac  # package, ad-hoc sign and install to /Applications (this Mac only)
@@ -41,20 +42,22 @@ TERMLESS_VIEW=installed TERMLESS_CAPTURE=/tmp/termless.png npx electron .
 
 ### End-to-end test
 
-`scripts/e2e.sh` launches the app with a throwaway data folder and drives it end to end: approval cards (accepted and declined), a question card, memory, History (titles, reopening and continuing a conversation, switching while a card is waiting), restarting the app to resume a real Codex thread, the fallback when a thread is gone, and deleting everything. It only creates small files inside the throwaway folder, and deletes every Codex thread it created.
+`scripts/e2e.sh` launches the app with a throwaway data folder and drives it end to end: approval cards (accepted and declined), a question card, memory, the inventory from every source, the administrator card (declined only, so no password dialog appears) and a refused administrator command, History (titles, reopening and continuing a conversation, switching while a card is waiting), restarting the app to resume a real Codex thread, the fallback when a thread is gone, and deleting everything. It only creates small files inside the throwaway folder, and deletes every Codex thread it created.
 
 ### How the Assistant works
 
 - Termless runs `codex app-server` and talks JSON-RPC to it (`src/main/codex/appServer.ts`).
 - Each conversation is a Codex thread with approval policy `untrusted`: every command that isn't plainly read-only reaches the user as a confirmation card first. Threads live in Termless's own Codex home, so conversations in History can be continued (`thread/resume`, with a summary-based fallback); deleting a conversation deletes its thread.
 - Termless's rules, facts about the Mac, remembered facts and recent changes are sent as developer instructions (`src/main/agent/instructions.ts`).
-- Termless gives the agent its own tools — inventory, ask-the-user cards, remember/recall/forget, action log (`src/main/agent/tools.ts`) — so memory stays in the app and works with any agent.
+- Termless gives the agent its own tools — inventory of everything installed, ask-the-user cards, remember/recall/forget, action log, and run-as-administrator (`src/main/agent/tools.ts`) — so memory stays in the app and works with any agent.
+- Administrator rights: the agent never types `sudo`. It calls `termless_run_as_admin`; the user approves a card, then macOS asks for the password in its own dialog (Termless never sees it).
 - Conversations are saved as they happen (`conversations/*.json`). When the user leaves one, a separate read-only thread extracts lasting facts into memory (`memory.json`) and gives the conversation a short title.
 - Changes made on the Mac are logged automatically at the end of each turn and fed back to the agent as context.
 
 ### Layout
 
-- `src/main/` – Electron main process: window, IPC, Homebrew (`brew.ts`), setup checklist (`setup.ts`)
+- `src/hostkit/` – standalone module (no Electron, Node built-ins only) that finds and describes what is installed on a Mac — Homebrew, App Store, apps, npm, pnpm, pipx, uv, cargo, go — and builds the commands to update or remove it; also runs commands as administrator and installs Homebrew. Reusable in other projects; see [its README](src/hostkit/README.md)
+- `src/main/` – Electron main process: window, IPC, inventory cache (`inventory.ts`), setup checklist (`setup.ts`)
 - `src/main/codex/` – finding Codex and the app-server client
 - `src/main/agent/` – conversation session, saved conversations, instructions, tools, memory
 - `src/preload/` – the only bridge the UI has to the system (`window.termless`)

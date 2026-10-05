@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events'
 import { mkdirSync } from 'node:fs'
+import { adminCommandProblem, runAsAdmin } from '../../hostkit'
 import type {
   AgentState,
   ApprovalDecision,
-  BrewInventory,
   ConversationSummary,
+  Inventory,
   Lang,
   TimelineItem
 } from '../../shared/types'
@@ -19,13 +20,16 @@ import type { MemoryStore } from './memory'
 import { describeToolCall, runTool, TOOL_SPECS } from './tools'
 
 const MAX_OUTPUT_CHARS = 20_000
+const ADMIN_TOOL = 'termless_run_as_admin'
+/** Tools that show their own card instead of an activity line. */
+const CARD_TOOLS = new Set(['termless_ask_user', ADMIN_TOOL])
 const MEMORY_TIMEOUT_MS = 90_000
 const PERSIST_DELAY_MS = 400
 
 interface Deps {
   memory: MemoryStore
   conversations: ConversationStore
-  getInventory: () => Promise<BrewInventory>
+  getInventory: () => Promise<Inventory>
   workspaceDir: string
   appVersion: string
 }
@@ -65,6 +69,8 @@ export class AgentSession extends EventEmitter {
   private lang: Lang = 'en'
 
   private approvals = new Map<string, { requestId: number | string }>()
+  /** Administrator commands waiting for the user's OK on their card. */
+  private adminRequests = new Map<string, { requestId: number | string; command: string; reason: string }>()
   private answers = new Map<string, PendingAnswer>()
   private userInputGroups = new Map<string, { requestId: number | string; answers: Record<string, { answers: string[] }>; remaining: number }>()
 
@@ -135,6 +141,12 @@ export class AgentSession extends EventEmitter {
   }
 
   respondToApproval(itemId: string, decision: ApprovalDecision): void {
+    const admin = this.adminRequests.get(itemId)
+    if (admin) {
+      this.adminRequests.delete(itemId)
+      void this.runAdminCommand(itemId, admin, decision)
+      return
+    }
     const pending = this.approvals.get(itemId)
     if (!pending || !this.client) return
     this.approvals.delete(itemId)
@@ -263,6 +275,7 @@ export class AgentSession extends EventEmitter {
     if (conversation) this.flushPersist(conversation)
     this.current = null
     this.approvals.clear()
+    this.adminRequests.clear()
     this.answers.clear()
     this.userInputGroups.clear()
     this.turnId = null
@@ -438,6 +451,10 @@ export class AgentSession extends EventEmitter {
       this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status: 'stopped' } : item))
     }
     this.approvals.clear()
+    for (const [itemId] of this.adminRequests) {
+      this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status: 'stopped' } : item))
+    }
+    this.adminRequests.clear()
     for (const item of this.state.timeline) {
       if (item.kind === 'command' && item.status === 'running') this.updateItem(item.id, (i) => (i.kind === 'command' ? { ...i, status: 'stopped' } : i))
       if (item.kind === 'question' && item.answer === null) this.updateItem(item.id, (i) => (i.kind === 'question' ? { ...i, expired: true } : i))
@@ -481,7 +498,7 @@ export class AgentSession extends EventEmitter {
         })
         break
       case 'dynamicToolCall':
-        if (item.tool !== 'termless_ask_user') {
+        if (!CARD_TOOLS.has(item.tool)) {
           this.push({ kind: 'activity', id: item.id, tool: item.tool, summary: describeToolCall(item.tool, item.arguments, this.lang), status: 'running' })
         }
         break
@@ -523,7 +540,7 @@ export class AgentSession extends EventEmitter {
       }
 
       case 'dynamicToolCall':
-        if (item.tool !== 'termless_ask_user') {
+        if (!CARD_TOOLS.has(item.tool)) {
           this.updateItem(item.id, (prev) => (prev.kind === 'activity' ? { ...prev, status: item.success === false ? 'failed' : 'done' } : prev))
         }
         break
@@ -571,6 +588,10 @@ export class AgentSession extends EventEmitter {
           })
           return
         }
+        if (params.tool === ADMIN_TOOL) {
+          this.requestAdminCommand(id, params.callId as string, params.arguments ?? {})
+          return
+        }
         if (params.tool === 'termless_log_action') this.loggedThisTurn = true
         try {
           const result = await runTool(params.tool, params.arguments, { memory: this.deps.memory, getInventory: this.deps.getInventory })
@@ -607,6 +628,66 @@ export class AgentSession extends EventEmitter {
       default:
         // Requests Termless does not support are refused rather than left hanging.
         client.respondError(id, `Termless does not support ${method}`)
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Administrator commands (termless_run_as_admin)
+
+  /** Shows the request as a confirmation card; nothing runs until the user allows it. */
+  private requestAdminCommand(requestId: number | string, itemId: string, args: any): void {
+    const command = String(args?.command ?? '').trim().replace(/^sudo\s+/, '')
+    const reason = String(args?.reason ?? '').trim().slice(0, 300)
+    const problem = command ? adminCommandProblem(command) : 'The command is empty.'
+    if (problem) {
+      this.client?.respond(requestId, { success: false, contentItems: [{ type: 'inputText', text: `Not run. ${problem}` }] })
+      return
+    }
+    this.adminRequests.set(itemId, { requestId, command, reason })
+    this.push({ kind: 'command', id: itemId, command, reason, status: 'awaiting-approval', risk: 'admin', output: null, exitCode: null })
+  }
+
+  private async runAdminCommand(
+    itemId: string,
+    request: { requestId: number | string; command: string; reason: string },
+    decision: ApprovalDecision
+  ): Promise<void> {
+    const client = this.client
+    const reply = (success: boolean, text: string) =>
+      client?.respond(request.requestId, { success, contentItems: [{ type: 'inputText', text }] })
+    const setStatus = (status: 'running' | 'done' | 'failed' | 'declined', output: string | null = null) =>
+      this.updateItem(itemId, (item) => (item.kind === 'command' ? { ...item, status, output: output?.slice(-MAX_OUTPUT_CHARS) ?? item.output } : item))
+
+    if (decision === 'decline') {
+      setStatus('declined')
+      this.current?.transcript.push('(User declined an administrator command.)')
+      reply(false, 'The user declined. Nothing was run.')
+      return
+    }
+
+    setStatus('running')
+    const zh = this.lang === 'zh'
+    const why = request.reason ? (zh ? `：${request.reason}` : `: ${request.reason}`) : zh ? '。' : '.'
+    const result = await runAsAdmin(request.command, {
+      prompt: zh ? `Termless 需要管理员权限${why}` : `Termless needs administrator rights${why}`
+    })
+    if (result.status !== 'cancelled') this.commandsThisTurn.push(request.command)
+    switch (result.status) {
+      case 'ok':
+        setStatus('done', result.output)
+        this.current?.transcript.push(`Ran as administrator (done): ${request.command}`)
+        reply(true, result.output.trim() ? result.output.slice(-MAX_OUTPUT_CHARS) : 'Done (no output).')
+        break
+      case 'cancelled':
+        setStatus('declined')
+        this.current?.transcript.push('(User cancelled the macOS password dialog.)')
+        reply(false, 'The user cancelled the macOS password dialog. Nothing was run.')
+        break
+      case 'failed':
+        setStatus('failed', result.output)
+        this.current?.transcript.push(`Ran as administrator (failed): ${request.command}`)
+        reply(false, `Failed${result.code !== null ? ` (code ${result.code})` : ''}:\n${result.output.slice(-MAX_OUTPUT_CHARS)}`)
+        break
     }
   }
 

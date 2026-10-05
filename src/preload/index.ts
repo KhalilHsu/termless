@@ -1,15 +1,24 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { AgentState, ConversationSummary, TermlessApi } from '../shared/types'
+import type { AgentState, ConversationSummary, SetupProgress, TermlessApi } from '../shared/types'
 
 // The renderer gets exactly these calls and nothing else from Node/Electron.
 const api: TermlessApi & { onInventoryChanged(listener: () => void): () => void } = {
   getInventory: () => ipcRenderer.invoke('inventory:get'),
+  getItemSize: (id) => ipcRenderer.invoke('inventory:size', id),
+  revealItem: (id) => ipcRenderer.invoke('inventory:reveal', id),
   getCodexStatus: () => ipcRenderer.invoke('codex:status'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
   getSetupStatus: () => ipcRenderer.invoke('setup:status'),
   installCodex: (lang) => ipcRenderer.invoke('setup:installCodex', lang),
   signInToCodex: () => ipcRenderer.invoke('setup:signIn'),
+  installHomebrew: (lang) => ipcRenderer.invoke('setup:installHomebrew', lang),
+  openCommandLineToolsInstaller: () => ipcRenderer.invoke('setup:openCommandLineTools'),
+  onSetupProgress: (listener) => {
+    const handler = (_event: IpcRendererEvent, progress: SetupProgress) => listener(progress)
+    ipcRenderer.on('setup:progress', handler)
+    return () => ipcRenderer.removeListener('setup:progress', handler)
+  },
 
   getAgentState: () => ipcRenderer.invoke('agent:state'),
   onAgentState: (listener) => {

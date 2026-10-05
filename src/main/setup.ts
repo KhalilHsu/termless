@@ -1,22 +1,33 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { dialog, type BrowserWindow } from 'electron'
-import type { Lang, SetupActionResult, SetupStatus } from '../shared/types'
-import { findBrew } from './brew'
+import {
+  commandLineToolsInstalled,
+  findExecutable,
+  findHomebrew,
+  homebrewInstallSupport,
+  hostEnv,
+  installHomebrew as installHomebrewPackage,
+  openCommandLineToolsInstaller as openCltInstaller,
+  readOnlyEnv,
+  runText
+} from '../hostkit'
+import type { Lang, SetupActionResult, SetupProgress, SetupStatus } from '../shared/types'
 import { codexEnv, getCodexHome, getCodexStatus } from './codex/detect'
-import { findExecutable, run, toolEnv } from './env'
 
 // First-run checklist: Homebrew → Codex installed → signed in to Codex.
 
 export async function getSetupStatus(): Promise<SetupStatus> {
-  const brew = findBrew()
-  const [brewVersion, codex] = await Promise.all([
+  const brew = findHomebrew()
+  const [brewVersion, codex, support, commandLineTools] = await Promise.all([
     brew
-      ? run(brew, ['--version'], { env: toolEnv({ HOMEBREW_NO_AUTO_UPDATE: '1' }), timeoutMs: 15_000 })
+      ? runText(brew, ['--version'], { env: readOnlyEnv(), timeoutMs: 15_000 })
           .then((out) => out.split('\n')[0].replace(/^Homebrew\s+/, '').trim())
           .catch(() => null)
       : Promise.resolve(null),
-    getCodexStatus()
+    getCodexStatus(),
+    homebrewInstallSupport().catch(() => null),
+    commandLineToolsInstalled()
   ])
 
   let signedIn: boolean | null = null
@@ -24,7 +35,7 @@ export async function getSetupStatus(): Promise<SetupStatus> {
   if (codex.installed && !codex.error && codex.path) {
     try {
       // `codex login status` prints e.g. "Logged in using ChatGPT" and exits 0.
-      const out = await run(codex.path, ['login', 'status'], { env: codexEnv(), timeoutMs: 15_000 })
+      const out = await runText(codex.path, ['login', 'status'], { env: codexEnv(), timeoutMs: 15_000 })
       signedIn = true
       accountLabel = out.trim().replace(/^Logged in using\s+/i, '') || null
     } catch {
@@ -34,7 +45,13 @@ export async function getSetupStatus(): Promise<SetupStatus> {
 
   const npm = findExecutable(['/opt/homebrew/bin/npm', '/usr/local/bin/npm'])
   return {
-    homebrew: { installed: Boolean(brew), version: brewVersion },
+    homebrew: {
+      installed: Boolean(brew),
+      version: brewVersion,
+      canInstall: !brew && support?.ok === true,
+      cannotInstallReason: support && !support.ok && support.reason !== 'installed' ? support.reason : null
+    },
+    commandLineTools,
     codex,
     signedIn,
     accountLabel,
@@ -42,8 +59,50 @@ export async function getSetupStatus(): Promise<SetupStatus> {
   }
 }
 
+/**
+ * Installs Homebrew from its official package. Explains first; the only
+ * password prompt is macOS's own, so Termless never sees the password.
+ */
+export async function installHomebrew(
+  win: BrowserWindow | null,
+  lang: Lang,
+  onProgress: (progress: SetupProgress) => void
+): Promise<SetupActionResult> {
+  const zh = lang === 'zh'
+  const needsClt = !(await commandLineToolsInstalled())
+  const options = {
+    type: 'question' as const,
+    buttons: zh ? ['安装', '取消'] : ['Install', 'Cancel'],
+    defaultId: 0,
+    cancelId: 1,
+    message: zh ? '安装 Homebrew？' : 'Install Homebrew?',
+    detail: zh
+      ? `Homebrew 是 Mac 上最常用的软件安装工具，教程里的大多数安装命令都要用到它。\n\nTermless 会从 Homebrew 在 GitHub 上的官方发布页下载它的安装包（约 150 MB），确认安装包经过 Apple 公证后再安装。${needsClt ? '\n\n这台 Mac 还缺少 Apple 的命令行开发工具（Homebrew 需要它），会一并安装，大约多花 5～15 分钟。' : ''}\n\n接下来 macOS 会弹出窗口请你输入 Mac 的登录密码。密码只交给 macOS，Termless 看不到。`
+      : `Homebrew is the standard way to install software on a Mac; most install commands in tutorials use it.\n\nTermless will download its official installer (about 150 MB) from Homebrew's release page on GitHub and check that Apple has notarized it before installing.${needsClt ? "\n\nThis Mac also needs Apple's Command Line Tools, which Homebrew relies on. They will be installed too, which adds 5–15 minutes." : ''}\n\nmacOS will then ask for your Mac password in its own window. The password goes to macOS only; Termless never sees it.`
+  }
+  const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+  if (response !== 0) return { ok: false, message: '', cancelled: true }
+
+  try {
+    const result = await installHomebrewPackage({
+      prompt: zh ? 'Termless 要安装 Homebrew。' : 'Termless wants to install Homebrew.',
+      onProgress: (p) => onProgress({ task: 'homebrew', ...p })
+    })
+    if (result.status === 'ok') return { ok: true }
+    if (result.status === 'cancelled') return { ok: false, message: '', cancelled: true }
+    return { ok: false, message: result.message }
+  } finally {
+    onProgress(null)
+  }
+}
+
+/** Opens Apple's installer for the Command Line Tools (no password needed). */
+export async function openCommandLineToolsInstaller(): Promise<void> {
+  await openCltInstaller().catch(() => {})
+}
+
 export async function installCodex(win: BrowserWindow | null, lang: Lang): Promise<SetupActionResult> {
-  const brew = findBrew()
+  const brew = findHomebrew()
   const npm = findExecutable(['/opt/homebrew/bin/npm', '/usr/local/bin/npm'])
   const zh = lang === 'zh'
 
@@ -74,7 +133,7 @@ export async function installCodex(win: BrowserWindow | null, lang: Lang): Promi
   if (response !== 0) return { ok: false, message: '', cancelled: true }
 
   try {
-    await run(file, args, { env: toolEnv({ HOMEBREW_NO_ENV_HINTS: '1' }), timeoutMs: 15 * 60_000 })
+    await runText(file, args, { env: hostEnv({ HOMEBREW_NO_ENV_HINTS: '1' }), timeoutMs: 15 * 60_000 })
     return { ok: true }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? lastLines(error.message) : String(error) }

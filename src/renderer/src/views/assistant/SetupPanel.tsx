@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { SetupStatus } from '../../../../shared/types'
 import { useI18n } from '../../i18n'
 import { CheckIcon } from '../../icons'
+import { useHomebrewInstall } from '../../useHomebrewInstall'
 
 export function isSetupComplete(status: SetupStatus | null): boolean {
   return Boolean(status && status.codex.installed && !status.codex.error && status.signedIn)
@@ -19,6 +20,7 @@ export function SetupPanel({
   const { t, lang } = useI18n()
   const [busy, setBusy] = useState<'install' | 'signin' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const brewInstall = useHomebrewInstall(onRefresh)
 
   const run = async (kind: 'install' | 'signin') => {
     setBusy(kind)
@@ -49,10 +51,32 @@ export function SetupPanel({
       <ol className="setup-steps">
         <Step done={status.homebrew.installed} title={t('setup.brew.title')}>
           {status.homebrew.installed ? (
-            t('setup.brew.ok', { version: status.homebrew.version ?? '?' })
+            <>
+              {t('setup.brew.ok', { version: status.homebrew.version ?? '?' })}
+              {!status.commandLineTools && (
+                <>
+                  <span className="step-note">{t('setup.clt.missing')}</span>
+                  <button className="button step-button" onClick={() => void window.termless.openCommandLineToolsInstaller()}>
+                    {t('setup.clt.button')}
+                  </button>
+                </>
+              )}
+            </>
+          ) : brewInstall.busy ? (
+            <span className="step-progress">
+              <span className="spinner spinner-small" /> {brewInstall.status}
+            </span>
+          ) : status.homebrew.canInstall ? (
+            <>
+              <span>{t('setup.brew.missing')}</span>
+              <button className="button button-primary step-button" onClick={() => void brewInstall.start()} disabled={busy !== null}>
+                {t('brewInstall.button')}
+              </button>
+              {brewInstall.error && <span className="step-note is-error">{t('setup.failed', { message: brewInstall.error })}</span>}
+            </>
           ) : (
             <>
-              {t('setup.brew.missing')}{' '}
+              {t(status.homebrew.cannotInstallReason === 'intel' ? 'setup.brew.manualIntel' : 'setup.brew.manualOld')}{' '}
               <button className="link" onClick={() => window.termless.openExternal('https://brew.sh')}>
                 {t('setup.brew.open')}
               </button>
@@ -100,7 +124,7 @@ export function SetupPanel({
       {error && <p className="notice is-error">{t('setup.failed', { message: error })}</p>}
 
       <div className="setup-footer">
-        <button className="button" onClick={() => void onRefresh()} disabled={busy !== null}>
+        <button className="button" onClick={() => void onRefresh()} disabled={busy !== null || brewInstall.busy}>
           {t('setup.refresh')}
         </button>
         <button className="button button-primary" onClick={onDone} disabled={!complete}>

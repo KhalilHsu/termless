@@ -95,6 +95,8 @@ function CommandCard({ item }: { item: CommandItem }) {
           {open ? t('card.hideDetails') : t('card.showDetails')}
         </button>
       </div>
+      {item.reason && <p className="card-reason">{item.reason}</p>}
+      {awaiting && item.risk === 'admin' && <p className="card-reason muted">{t('card.adminHint')}</p>}
       {open && (
         <div className="card-details">
           <div className="card-label">{t('card.command')}</div>

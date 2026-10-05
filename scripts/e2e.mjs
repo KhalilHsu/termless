@@ -1,8 +1,8 @@
-// End-to-end test for the Assistant and History, driven over the Chrome
-// DevTools Protocol. Only harmless actions: files are created inside
-// Termless's own scratch workspace (under the test data folder), one change is
-// declined on purpose, and every conversation (with its Codex thread) is
-// deleted at the end.
+// End-to-end test for the Assistant, Installed and History, driven over the
+// Chrome DevTools Protocol. Only harmless actions: files are created inside
+// Termless's own scratch workspace (under the test data folder), changes and
+// the administrator card are declined on purpose (so no password dialog ever
+// appears), and every conversation (with its Codex thread) is deleted at the end.
 // Usage: node scripts/e2e.mjs <outDir> <dataDir>   (see scripts/e2e.sh)
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
@@ -175,18 +175,48 @@ s = await finishTurn('B1', "Don't allow")
 check('declined file absent', !existsSync(join(dataDir, 'workspace', 'decline-test.txt')))
 const idB = s.conversationId
 
+console.log('3b. Conversation C: inventory from every source, administrator card (declined), refused admin command')
+await clickText('New conversation')
+await sleep(800)
+const inventory = await js('window.termless.getInventory()')
+const found = inventory.sources.filter((x) => x.status === 'ok').map((x) => `${x.id}:${x.count}`)
+console.log('  sources:', found.join(' '))
+check('inventory has several sources', found.length >= 2)
+await nav('Installed')
+await waitForDom('.package-row')
+await shot('03a-installed')
+await nav('Assistant')
+const npmNames = inventory.items.filter((i) => i.source === 'npm').map((i) => i.name)
+await typeAndSend('Which command-line tools did I install with npm? Check the inventory and answer with just the package names, no commands.')
+s = await finishTurn('C1', "Don't allow")
+console.log('  answer:', lastAgentText(s))
+check('inventory tool used', s.timeline.some((i) => i.kind === 'activity' && i.tool === 'termless_get_inventory'))
+check('npm packages named', npmNames.length === 0 || npmNames.some((n) => lastAgentText(s).includes(n.split('/').pop())))
+await typeAndSend('Testing Termless: call termless_run_as_admin with the command "ls /var/root" and the reason "Testing the administrator card". Do not run anything else.')
+s = await waitFor('admin card', (s) => s.timeline.some((i) => i.kind === 'command' && i.risk === 'admin' && i.status === 'awaiting-approval') || s.phase === 'ready')
+const adminCard = s.timeline.find((i) => i.kind === 'command' && i.risk === 'admin')
+check('admin card shown with reason', Boolean(adminCard?.reason))
+await waitForDom('.card-reason')
+await shot('03b-admin-card')
+s = await finishTurn('C2', "Don't allow")
+check('admin card declined', s.timeline.some((i) => i.id === adminCard?.id && i.status === 'declined'))
+await typeAndSend('Testing Termless: call termless_run_as_admin with the command "brew --version" and the reason "Testing". Then tell me in one sentence what happened. Do not run anything else.')
+s = await finishTurn('C3', "Don't allow")
+console.log('  answer:', lastAgentText(s))
+check('brew as admin refused without a card', !s.timeline.some((i) => i.kind === 'command' && i.risk === 'admin' && /brew/.test(i.command)))
+
 console.log('4. History list and titles')
 await clickText('New conversation')
 s = await waitFor('titles', () => true)
 for (let i = 0; i < 90; i++) {
   const list = await conversations()
-  if (list.length === 2 && !(await state()).savingMemory) break
+  if (list.length === 3 && !(await state()).savingMemory) break
   await sleep(1000)
 }
 await sleep(1500)
 let list = await conversations()
 console.log('  conversations:', JSON.stringify(list.map((c) => c.title)))
-check('two conversations listed', list.length === 2)
+check('three conversations listed', list.length === 3)
 await nav('History')
 await sleep(600)
 await shot('03-history')
@@ -223,7 +253,7 @@ b.threadId = '01a0b000-0000-7000-8000-000000000000'
 writeFileSync(fileB, JSON.stringify(b))
 await launch()
 list = await conversations()
-check('history survives restart', list.length === 2)
+check('history survives restart', list.length === 3)
 await openFromHistory(titleA)
 await typeAndSend('Remind me: what file did you create for me earlier? Just the file name, no commands.')
 s = await finishTurn('A4')

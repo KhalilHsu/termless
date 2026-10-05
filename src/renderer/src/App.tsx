@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AgentState, BrewInventory, ConversationSummary, SetupStatus } from '../../shared/types'
+import type { AgentState, ConversationSummary, Inventory, SetupStatus } from '../../shared/types'
 import { useI18n } from './i18n'
 import { BoxIcon, ChatIcon, ClockIcon, CompassIcon } from './icons'
 import { AssistantView } from './views/assistant/AssistantView'
@@ -26,7 +26,7 @@ const EMPTY_AGENT: AgentState = {
   savingMemory: false
 }
 
-export type InventoryState = { status: 'loading' } | { status: 'done'; inventory: BrewInventory }
+export type InventoryState = { status: 'loading' } | { status: 'done'; inventory: Inventory }
 
 export function App() {
   const { t, lang, setLang } = useI18n()
@@ -76,10 +76,7 @@ export function App() {
     void window.termless.sendMessage(prompt, lang)
   }
 
-  const updates =
-    inventory.status === 'done' && inventory.inventory.ok
-      ? inventory.inventory.packages.filter((p) => p.outdated).length
-      : 0
+  const updates = inventory.status === 'done' ? inventory.inventory.items.filter((i) => i.outdated).length : 0
 
   const nav: { id: ViewId; label: string; icon: React.ReactNode; badge?: number }[] = [
     { id: 'assistant', label: t('nav.assistant'), icon: <ChatIcon /> },
@@ -93,14 +90,14 @@ export function App() {
   if (inventory.status === 'loading') {
     statusText = t('status.loading')
     statusTone = 'busy'
-  } else if (inventory.inventory.ok) {
-    statusText = `${t('status.ready')} · ${t('status.summary', {
-      version: inventory.inventory.brewVersion,
-      count: inventory.inventory.packages.length
-    })}`
-  } else if (inventory.inventory.reason === 'failed') {
-    statusText = t('status.error')
-    statusTone = 'error'
+  } else {
+    const { items, sources } = inventory.inventory
+    const found = sources.filter((s) => s.status === 'ok' && s.count > 0).length
+    statusText = `${t('status.ready')} · ${t('status.summary', { count: items.length, sources: found })}`
+    if (sources.some((s) => s.status === 'error')) {
+      statusText += ` · ${t('status.someFailed')}`
+      statusTone = 'error'
+    }
   }
 
   return (

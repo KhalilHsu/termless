@@ -11,6 +11,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --test \"src/hostkit/test/*.test.ts\"",
     "dist:mac": "npm run build && electron-builder --mac --dir && scripts/sign-mac.sh",
     "install:mac": "scripts/install-mac.sh"
   },

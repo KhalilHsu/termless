@@ -1,31 +1,10 @@
 // Types shared by the main process, the preload bridge and the renderer.
 
-export type PackageKind = 'formula' | 'cask'
+// What is installed on this Mac comes from hostkit (src/hostkit), Termless's
+// standalone module for package managers; its types are plain data.
+import type { HomebrewInstallStep, HomebrewSupport, Inventory } from '../hostkit/types'
 
-export interface InstalledPackage {
-  /** Unique id: `formula:<name>` or `cask:<token>`. */
-  id: string
-  kind: PackageKind
-  /** Homebrew name (formula name or cask token). */
-  name: string
-  /** Human-friendly name (casks often have one, e.g. "1Password CLI"). */
-  displayName: string
-  description: string | null
-  installedVersion: string
-  latestVersion: string | null
-  outdated: boolean
-  tap: string | null
-  homepage: string | null
-  dependencies: string[]
-  /** Installed packages that depend on this one. */
-  dependents: string[]
-  /** False when Homebrew pulled it in only as a dependency. */
-  installedOnRequest: boolean
-}
-
-export type BrewInventory =
-  | { ok: true; brewPath: string; brewVersion: string; packages: InstalledPackage[]; loadedAt: string }
-  | { ok: false; reason: 'not-installed' | 'failed'; message: string }
+export type { CommandSpec, HomebrewInstallStep, InstalledItem, Inventory, ItemKind, SourceReport } from '../hostkit/types'
 
 export interface CodexStatus {
   installed: boolean
@@ -39,7 +18,15 @@ export interface CodexStatus {
 // Setup (first-run checklist)
 
 export interface SetupStatus {
-  homebrew: { installed: boolean; version: string | null }
+  homebrew: {
+    installed: boolean
+    version: string | null
+    /** Whether Termless can install it here (Apple silicon, macOS 15+). */
+    canInstall: boolean
+    cannotInstallReason: Exclude<HomebrewSupport, { ok: true }>['reason'] | null
+  }
+  /** Apple's Command Line Tools (git, compilers), which Homebrew needs. */
+  commandLineTools: boolean
   codex: CodexStatus
   /** null while unknown (e.g. Codex missing or not reachable). */
   signedIn: boolean | null
@@ -49,6 +36,9 @@ export interface SetupStatus {
 }
 
 export type SetupActionResult = { ok: true } | { ok: false; message: string; cancelled?: boolean }
+
+/** Progress of a long setup task, pushed to the UI while it runs. */
+export type SetupProgress = { task: 'homebrew'; step: HomebrewInstallStep; fraction?: number } | null
 
 // ---------------------------------------------------------------------------
 // Assistant
@@ -65,6 +55,8 @@ export type TimelineItem =
       command: string
       status: 'awaiting-approval' | 'running' | 'done' | 'failed' | 'declined' | 'stopped'
       risk: CommandRisk
+      /** Why it is needed, when the agent said so (administrator requests). */
+      reason?: string
       output: string | null
       exitCode: number | null
     }
@@ -138,13 +130,20 @@ export type Lang = 'en' | 'zh'
 // ---------------------------------------------------------------------------
 
 export interface TermlessApi {
-  getInventory(): Promise<BrewInventory>
+  getInventory(): Promise<Inventory>
+  /** Disk space used by an installed item, in bytes (measured on demand). */
+  getItemSize(id: string): Promise<number | null>
+  /** Shows the item in Finder. */
+  revealItem(id: string): Promise<void>
   getCodexStatus(): Promise<CodexStatus>
   openExternal(url: string): Promise<void>
 
   getSetupStatus(): Promise<SetupStatus>
   installCodex(lang: Lang): Promise<SetupActionResult>
   signInToCodex(): Promise<SetupActionResult>
+  installHomebrew(lang: Lang): Promise<SetupActionResult>
+  openCommandLineToolsInstaller(): Promise<void>
+  onSetupProgress(listener: (progress: SetupProgress) => void): () => void
 
   getAgentState(): Promise<AgentState>
   onAgentState(listener: (state: AgentState) => void): () => void

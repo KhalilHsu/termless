@@ -1,0 +1,13 @@
+{
+  "name": "hostkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find, describe and manage what is installed on a Mac (Homebrew, npm, pnpm, pipx, uv, cargo, go, apps, App Store).",
+  "license": "MIT",
+  "type": "module",
+  "exports": "./index.ts",
+  "engines": { "node": ">=23.6" },
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\""
+  }
+}

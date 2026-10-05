@@ -1,6 +1,6 @@
 # Termless 产品笔记
 
-> 最后更新：2026-09-19。标注说明：✅ 已确认；💡 提议，待确认；❓ 未决。
+> 最后更新：2026-10-05。标注说明：✅ 已确认；💡 提议，待确认；❓ 未决。
 
 ## 1. 一句话定位
 
@@ -141,7 +141,15 @@
 > 以上为公开资料整理，不构成法律意见。
 
 ### 10.3 已安装清单的数据来源
-Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool、cargo、Go bin、Mac App Store（mas）、/Applications。
+✅ 已实现为独立模块 **hostkit**（`src/hostkit/`，见其 README）。它不依赖 Termless 和 Electron，只用 Node 内置模块，别的项目可以直接拷走复用（或以后发布成包）。
+
+- 来源：Homebrew（formula / cask）、App Store（有 App Store 收据的应用；装了 `mas` 时还能查更新）、/Applications 和 ~/Applications 里的其他应用、npm 全局、pnpm 全局、pipx、uv tool、cargo、Go bin。
+- 每个来源实现同一个 `PackageSource` 接口（探测 → 列出 → 生成更新 / 卸载命令），新增一个包管理器只需写一个文件。各来源并行读取、互不影响：某个来源读取失败只标记它自己。
+- 同一个东西只列一次：Homebrew cask 装的 .app 由 Homebrew 认领，不会在「应用程序文件夹」里重复出现。
+- hostkit 只读：它只**生成**命令（`CommandSpec`），由宿主 App 决定是否执行。在 Termless 里，这些命令交给助手，助手解释后经确认卡片执行。
+- 跳过的内容：macOS 自带的 Apple 应用；浏览器创建的网页应用（它们归浏览器管理）。
+- 占用空间按需计算（打开详情时用 `du` 测量），不在列表加载时全部计算，因为大应用要算好几秒。
+- 从 Finder 启动的 App 拿不到用户 shell 的 PATH：hostkit 会查常见安装位置，并在启动时向登录 shell 要一次 PATH，所以 nvm、asdf 装的工具也能找到。
 
 ### 10.4 上下文与记忆
 
@@ -156,27 +164,35 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 | 5. 配方（Skills） | 常见任务的最佳做法，与「发现」Tab 共用 | 按需加载 |
 
 **App 向 Agent 提供自定义工具**（已实现为 Codex dynamic tools；将来接入其他 Agent 时可再包成 MCP 服务），与具体 Agent 无关：
-- `termless_get_inventory`、`termless_recall` / `termless_remember` / `termless_forget`、`termless_get_recent_actions`、`termless_ask_user`、`termless_log_action`
+- `termless_get_inventory`（全部来源）、`termless_recall` / `termless_remember` / `termless_forget`、`termless_get_recent_actions`、`termless_ask_user`、`termless_log_action`、`termless_run_as_admin`（先确认，再弹 macOS 原生密码框）
 - 记忆存在 App 里，切换 Agent 不丢失；UI 由 Agent 显式调用驱动，更稳定。
 - 会话结束时由 App 额外跑一次总结写入记忆；记忆对用户可见、可删除。
 
 ### 10.5 已知的难点
-- **管理员密码**：安装 Homebrew 等操作需要 sudo。App 不能代填密码，需要调起 macOS 原生的授权弹窗。
-- **Xcode Command Line Tools**：Homebrew 依赖它，安装时会弹系统对话框，耗时也长，引导里要解释清楚。
+- ✅ **管理员密码**：已解决。需要管理员权限的命令由 macOS 原生授权弹窗执行（`osascript … with administrator privileges`），密码只交给 macOS，Termless 看不到。助手要用管理员权限时调用 `termless_run_as_admin`（附一句理由），先出确认卡片，用户允许后才弹系统密码框。brew / pipx / uv / cargo 以及修改系统安全设置的命令会被直接拒绝，不会以 root 运行。
+- ✅ **安装 Homebrew**：使用 Homebrew 官方的 .pkg 安装包（GitHub Release 上发布，经过 Apple 公证）。下载后先校验签名团队和公证，再安装；整个过程只弹一次密码框，缺少 Command Line Tools 时也一起装上（用 `softwareupdate`，和 Homebrew 官方安装脚本的做法一样）。安装包会把 Homebrew 写进系统 PATH（`/etc/paths.d/homebrew`），不用改用户的 `.zprofile`。⚠️ 这个安装包只支持 Apple 芯片和 macOS 15 及以上；其他 Mac 目前提示用户手动安装（见 14 节 P3）。
+- **Xcode Command Line Tools**：安装 Homebrew 时一起装上（见上条）。已经有 Homebrew 但缺 CLT 的 Mac，引导里会提供按钮打开 Apple 自己的安装窗口。
 - **来路不明的命令**：`curl ... | sh` 这类命令需要识别来源并提示风险。
 - **网络诊断**：区分「完全没网」「连不上某个服务（GitHub / Homebrew / 模型 API）」「下载太慢超时」，分别用人话解释。
 
 ## 11. MVP 范围
 
-✅ 按顺序推进：
-1. 首次启动引导：选择 Agent → 安装 → 登录 → 装好 Homebrew
-2. 助手 Tab：对话 + 授权卡片 + 提问卡片，跑通「粘贴命令 → 解释 → 确认 → 执行」
-3. 已安装 Tab：先支持 Homebrew，再扩展到其他来源
-4. 历史 Tab（会话历史，可继续对话）+ 长期记忆
-5. 发现 Tab：先放 Coming soon 占位
+✅ 按顺序推进（2026-10-05 全部完成）：
+1. ✅ 首次启动引导：选择 Agent → 安装 → 登录 → 装好 Homebrew
+2. ✅ 助手 Tab：对话 + 授权卡片 + 提问卡片，跑通「粘贴命令 → 解释 → 确认 → 执行」
+3. ✅ 已安装 Tab：先支持 Homebrew，再扩展到其他来源
+4. ✅ 历史 Tab（会话历史，可继续对话）+ 长期记忆
+5. ✅ 发现 Tab：先放 Coming soon 占位
 
 ## 12. 进度
 
+- 2026-10-05：**MVP 剩余两项完成：管理员权限 + 已安装支持全部来源**。
+  - 新的独立模块 hostkit（`src/hostkit/`）：负责本机安装情况的检测、描述和管理命令，供 Termless 和以后的其他项目使用（见 10.3）。有自己的 README 和单元测试（`npm test`，用录制的命令输出测试各来源的解析，不需要本机装有这些工具）。
+  - 已安装 Tab：显示 9 类来源的内容；按「应用 / 命令行工具 / 可更新」筛选，并可按安装方式筛选；每一项标明是用什么装的、提供哪些命令、占用多少空间，可以在访达中显示；读取失败的来源单独提示；没装 Homebrew 时可直接安装。更新、卸载照旧交给助手，应用的卸载是「移到废纸篓」，可以放回。
+  - 助手：`termless_get_inventory` 覆盖全部来源，并带上每一项准确的更新 / 卸载命令；开对话时注入的环境信息里也列出各个包管理器；新增 `termless_run_as_admin`（见 10.5），确认卡片上显示助手给出的理由，并提示接下来 macOS 会要密码。
+  - 首次启动引导：Homebrew 一步可以直接安装（下载进度 → 校验 → 系统密码框 → 安装 CLT / Homebrew）；Homebrew 已装但缺少 CLT 时，提供安装 CLT 的按钮。
+  - 端到端测试新增：多来源清单、助手按来源回答、管理员卡片（只测「不允许」，不会真的弹密码框）、以 root 运行 brew 被拒绝。
+  - 未能端到端实测的部分：在一台没有 Homebrew 的 Mac 上真正走完安装（开发机已经装了 Homebrew）。已经实测的有：下载官方安装包、校验签名和公证（伪造的包、签名团队不对的包都会被拒绝）、管理员命令的参数传递和输出解析（去掉提权后实际运行）。需要在一台干净的 Mac 或虚拟机上补测，见 14 节 P0。
 - 2026-09-19：**会话历史完成**。
   - 设计原则：**聊天只在助手里进行；历史只负责找对话**。点开历史里的对话 → 助手切换到那段对话，输入框直接接着聊。当前对话也在历史列表里（标“当前”），切走不会丢。
   - 助手正在执行或等待确认时切换：先弹窗确认，确认后停止当前任务再切换；停下的卡片标为“没有做完就停止了”，未回答的提问标为“已不再等待回答”。
@@ -205,3 +221,45 @@ Homebrew（formula / cask，`brew info --json`）、npm 全局、pipx、uv tool�
 - ✅ 界面语言：默认英文，支持中文
 - ❓ 「发现」里的内容以后如何维护（第一版先占位）
 - ✅ 订阅条款：已调研（见 10.2.1），Claude、Gemini/Antigravity 均不可行，第一版只支持 Codex
+
+## 14. 后续计划（MVP 之后）
+
+> 💡 2026-10-05 提议，待确认。收集了前面各节提到、但还没排进计划的事，以及这次开发中新发现的。按优先级分组，组内按建议顺序排列。
+
+### P0：发布前必须做
+
+| # | 事项 | 来源 | 做法 | 怎么算完成 |
+|---|---|---|---|---|
+| 0.1 | **干净环境实测** | 第 8 节成功标准、12 节 | 在 macOS 虚拟机（Apple 芯片可用 Virtualization.framework，例如 UTM / tart）里，从零开始：下载 App → 引导里装好 Homebrew → 装 Codex → 登录 → 完成一篇教程 | 全程不打开终端、10 分钟内装好第一个工具；把过程录屏，问题记成 issue |
+| 0.2 | **典型教程测试集** | 第 8 节「能完成一篇典型教程」 | 挑 10 篇真实的教程 / README（yt-dlp、ffmpeg、ComfyUI、Ollama、一个 Python CLI、一个 npm CLI 等），写成可重复的端到端场景，定期跑 | ≥ 8 篇不用人插手就能完成；失败的写清原因 |
+| 0.3 | **正式签名、公证和自动更新** | 第 1 节目标（真实用户） | Apple Developer ID 签名 + notarize；用 electron-updater 走 GitHub Releases 自动更新 | 从网上下载后能正常打开，Gatekeeper 不报警；能自动升级到新版本 |
+| 0.4 | **商标检索** | 13 节 | 正式发布前做 USPTO / EUIPO 检索 | 有结论；如果冲突就改名 |
+
+### P1：补齐产品原则
+
+| # | 事项 | 来源 | 做法 | 怎么算完成 |
+|---|---|---|---|---|
+| 1.1 | **网络诊断** | 原则 5、10.5 | 在 hostkit 里加一个 `diagnoseNetwork()`：依次检查 DNS、能否连上 GitHub / Homebrew / npm / PyPI / OpenAI、是否设置了代理、下载速度；把结果分成「完全没网」「某个服务连不上」「太慢会超时」三类。命令失败、而输出里有网络错误时，助手调用它，再用人话解释；用户需要时，助手可以按用户的要求配置代理或镜像（属于改动，需要确认） | 断网、屏蔽 GitHub、限速这三种情况，助手都能说清是哪里不通、可以怎么办 |
+| 1.2 | **来路不明的命令** | 原则 2、10.5 | 识别 `curl … \| sh`、`bash <(curl …)`、`base64 -d \| sh` 等写法；下载脚本先不执行，读出内容让助手审一遍（来源域名是否知名、脚本里有没有 sudo / 删除 / 改系统设置）；确认卡片上增加「来源」和「这个脚本会做什么」 | 网上脚本的卡片上能看到来源和摘要；明显恶意的样例（删文件、上传钥匙串）会被助手警告并拒绝 |
+| 1.3 | **撤销** | 原则 3、场景 5 | 每次改动在操作日志里存一条结构化记录，包括「怎么撤销」（安装 ↔ 卸载用 hostkit 的 `CommandSpec`；删应用 → 从废纸篓放回；改配置 → 先备份原文件）。历史里的对话增加「撤销这次改动」入口，交给助手执行，同样走确认卡片 | 安装、卸载、改配置文件三类改动都能一键撤销，并有端到端测试 |
+| 1.4 | **场景 2：GitHub 链接 → 步骤卡片** | 场景 2 | 助手读 README 后，先给出一张「计划卡片」（要装的环境和每一步，用人话写），用户确认整体计划，然后逐步执行；计划卡片上的进度跟着执行更新 | 给 3 个真实仓库的链接都能出计划并完成；中途失败时卡片会标出停在哪一步 |
+| 1.5 | **Intel Mac 和旧 macOS 也能装 Homebrew** | 10.5 | 这些 Mac 用不了官方 .pkg，改用官方 install.sh，配合 `SUDO_ASKPASS` 指向一个弹原生密码框的小程序（不经过 Termless 进程） | Intel 虚拟机上能从引导里装好 Homebrew |
+
+### P2：让它更好用
+
+| # | 事项 | 来源 | 做法 |
+|---|---|---|---|
+| 2.1 | **配方（Skills）+ 发现 Tab** | 10.4 第 5 层、第 6 节、13 节未决问题 | 配方是一个公开 Git 仓库里的 Markdown / YAML 文件（「视频下载套装」「本地 AI 画图环境」），社区用 PR 贡献、维护者审核；App 定期拉取。助手按需加载配方，发现 Tab 展示同一份内容并支持一键安装（仍走助手 + 确认卡片）。这样也就回答了「发现里的内容以后如何维护」 |
+| 2.2 | **已安装：更多来源和信息** | 10.3 | 新增 bun、Volta / nvm 下的多个 Node 版本、Homebrew services（后台服务）；没装 mas 时也能查 App Store 更新（iTunes Search API）；列表一次显示所有项的占用空间（后台慢慢算并缓存） |
+| 2.3 | **批量操作** | 场景 4 | 「全部更新」「清理不再需要的依赖（`brew autoremove`）」，由助手先列出清单再确认 |
+| 2.4 | **记忆和改动对用户可见** | 10.4 | 记忆面板里显示「Termless 在这台 Mac 上做过的事」（只读时间线，可以从这里撤销，与 1.3 合并） |
+
+### P3：长期
+
+| # | 事项 | 来源 | 说明 |
+|---|---|---|---|
+| 3.1 | **Agent 适配层** | 10.2、10.2.1 约束 3 | 现在 `session.ts` 是按 Codex app-server 写的。把它抽象成 Agent 接口（开会话、发消息、审批、工具调用），Codex 是第一个实现；以后条款允许时再接入其他 Agent |
+| 3.2 | **自带 API key 模式** | 10.2.1 | 作为高级选项接入 Claude / Gemini API key（按量付费），依赖 3.1 |
+| 3.3 | **条款定期复查** | 10.2.1 约束 3 | 每季度复查 OpenAI / Anthropic / Google 的条款，结论记在 10.2.1 |
+| 3.4 | **hostkit 独立发布** | 10.3 | 等接口稳定后发布到 npm（发布时编译成 JS + 类型声明），供其他项目使用 |
+

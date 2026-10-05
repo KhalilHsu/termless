@@ -1,4 +1,4 @@
-import type { BrewInventory } from '../../shared/types'
+import type { InstalledItem, Inventory } from '../../shared/types'
 import type { MemoryStore } from './memory'
 
 // Tools Termless gives the agent (Codex "dynamic tools"). They are handled
@@ -12,10 +12,32 @@ export const TOOL_SPECS = [
     type: 'function',
     name: 'termless_get_inventory',
     description:
-      'List software installed with Homebrew on this Mac: name, type (command-line tool or app), installed version, whether an update is available, and a short description. Optionally filter by a search word.',
+      'List software installed on this Mac, from every source Termless knows: Homebrew, App Store, apps in Applications, npm, pnpm, pipx, uv, cargo and go. For each item: which tool installed it, type (app or command-line tool), version, whether an update is available, a short description, and the exact commands to update or remove it. Filter by a search word and/or a source.',
     inputSchema: {
       type: 'object',
-      properties: { query: { type: 'string', description: 'Optional word to filter by name or description.' } },
+      properties: {
+        query: { type: 'string', description: 'Optional word to filter by name or description.' },
+        source: {
+          type: 'string',
+          enum: ['homebrew', 'appstore', 'apps', 'npm', 'pnpm', 'pipx', 'uv', 'cargo', 'go'],
+          description: 'Optional: only items installed by this tool.'
+        }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    type: 'function',
+    name: 'termless_run_as_admin',
+    description:
+      'Run one command as administrator (root). The user first approves a card, then macOS asks for their password in its own dialog. Use only when administrator rights are truly needed, never for brew, pipx, uv or cargo. Returns the command output.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'The shell command, without sudo.' },
+        reason: { type: 'string', description: 'One plain sentence saying why administrator rights are needed, shown to the user.' }
+      },
+      required: ['command', 'reason'],
       additionalProperties: false
     }
   },
@@ -127,30 +149,30 @@ export function describeToolCall(tool: string, args: any, lang: 'en' | 'zh'): st
 
 export type ToolResult = { success: boolean; text: string }
 
-/** Handles every tool except termless_ask_user, which needs the UI. */
+/** Handles every tool except termless_ask_user and termless_run_as_admin, which need the UI. */
 export async function runTool(
   tool: string,
   args: any,
-  deps: { memory: MemoryStore; getInventory: () => Promise<BrewInventory> }
+  deps: { memory: MemoryStore; getInventory: () => Promise<Inventory> }
 ): Promise<ToolResult> {
   switch (tool) {
     case 'termless_get_inventory': {
       const inventory = await deps.getInventory()
-      if (!inventory.ok) {
-        return { success: true, text: inventory.reason === 'not-installed' ? 'Homebrew is not installed.' : inventory.message }
-      }
       const q = String(args?.query ?? '').toLowerCase().trim()
-      const matches = inventory.packages.filter(
-        (p) => !q || [p.name, p.displayName, p.description ?? ''].some((s) => s.toLowerCase().includes(q))
+      const source = args?.source ? String(args.source) : null
+      const matches = inventory.items.filter(
+        (i) =>
+          (!source || i.source === source) &&
+          (!q || [i.name, i.displayName, i.description ?? ''].some((s) => s.toLowerCase().includes(q)))
       )
-      const lines = matches.slice(0, 120).map((p) => {
-        const kind = p.kind === 'cask' ? 'app' : 'command-line tool'
-        const update = p.outdated && p.latestVersion ? `, update available: ${p.latestVersion}` : ''
-        return `- ${p.name} (${kind}, ${p.installedVersion}${update})${p.description ? `: ${p.description}` : ''}`
-      })
-      const more = matches.length > 120 ? `\n…and ${matches.length - 120} more. Use a query to narrow down.` : ''
-      const header = `Homebrew ${inventory.brewVersion}. ${matches.length} of ${inventory.packages.length} packages${q ? ` matching "${q}"` : ''}:`
-      return { success: true, text: matches.length ? `${header}\n${lines.join('\n')}${more}` : `No installed package matches "${q}".` }
+      const sources = inventory.sources
+        .map((s) => (s.status === 'ok' ? `${s.label} (${s.count})` : s.status === 'error' ? `${s.label} (could not be read: ${s.error})` : `${s.label} (not installed)`))
+        .join(', ')
+      const lines = matches.slice(0, 120).map(describeItem)
+      const more = matches.length > 120 ? `\n…and ${matches.length - 120} more. Use a query or source to narrow down.` : ''
+      const filter = [q && `matching "${q}"`, source && `from ${source}`].filter(Boolean).join(' ')
+      const header = `Sources: ${sources}.\n${matches.length} of ${inventory.items.length} items${filter ? ` ${filter}` : ''}:`
+      return { success: true, text: matches.length ? `${header}\n${lines.join('\n')}${more}` : `Sources: ${sources}.\nNothing installed ${filter || 'yet'}.` }
     }
 
     case 'termless_remember': {
@@ -190,4 +212,19 @@ export async function runTool(
     default:
       return { success: false, text: `Unknown tool ${tool}` }
   }
+}
+
+/** One line per item for the agent, e.g. "- wget [Homebrew, command-line tool, 1.24.5, update available: 1.25.0]: … update: `brew upgrade wget`". */
+function describeItem(item: InstalledItem): string {
+  const kind = item.kind === 'app' ? 'app' : item.kind === 'cli' ? 'command-line tool' : 'package'
+  const facts = [item.sourceLabel, kind, item.version ?? 'version unknown']
+  if (item.outdated && item.latestVersion) facts.push(`update available: ${item.latestVersion}`)
+  if (!item.installedOnRequest) facts.push('installed as a dependency')
+  const name = item.displayName !== item.name ? `${item.displayName} ("${item.name}")` : item.name
+  const commands = [
+    item.executables.length ? `commands: ${item.executables.slice(0, 6).join(', ')}` : '',
+    item.commands.upgrade ? `update: \`${item.commands.upgrade.display}\`` : '',
+    item.commands.uninstall ? `remove: \`${item.commands.uninstall.display}\`${item.commands.uninstall.needsAdmin ? ' (needs administrator)' : ''}` : ''
+  ].filter(Boolean)
+  return `- ${name} [${facts.join(', ')}]${item.description ? `: ${item.description}` : ''}${commands.length ? `; ${commands.join('; ')}` : ''}`
 }

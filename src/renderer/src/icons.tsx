@@ -72,3 +72,10 @@ export const CheckIcon = (p: IconProps) => (
     <path d="m5 12.5 4.5 4.5L19 7.5" />
   </Svg>
 )
+
+export const AppIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="4.5" />
+    <path d="M9 15.5 12 8l3 7.5M10 13h4" />
+  </Svg>
+)

@@ -1,6 +1,6 @@
 import { arch, homedir, userInfo } from 'node:os'
-import type { BrewInventory } from '../../shared/types'
-import { run } from '../env'
+import { runText } from '../../hostkit'
+import type { Inventory, SourceReport } from '../../shared/types'
 
 // Layer 2 of the agent's context: a short, factual picture of this Mac,
 // gathered fresh at the start of every conversation.
@@ -11,23 +11,26 @@ export interface MacEnvironment {
   shell: string
   home: string
   homebrew: string
+  /** One line per other package manager that is installed. */
+  otherSources: string[]
   network: string
 }
 
-export async function collectEnvironment(inventory: BrewInventory | null): Promise<MacEnvironment> {
+export async function collectEnvironment(inventory: Inventory | null): Promise<MacEnvironment> {
   const [macosVersion, network] = await Promise.all([
-    run('/usr/bin/sw_vers', ['-productVersion'], { timeoutMs: 5000 })
+    runText('/usr/bin/sw_vers', ['-productVersion'], { timeoutMs: 5000 })
       .then((v) => v.trim())
       .catch(() => 'unknown'),
     checkNetwork()
   ])
 
   let homebrew = 'not installed'
-  if (inventory?.ok) {
-    const outdated = inventory.packages.filter((p) => p.outdated).length
-    homebrew = `Homebrew ${inventory.brewVersion} at ${inventory.brewPath}; ${inventory.packages.length} packages installed, ${outdated} with updates available`
-  } else if (inventory && inventory.reason === 'failed') {
-    homebrew = 'installed, but its package list could not be read'
+  const otherSources: string[] = []
+  for (const source of inventory?.sources ?? []) {
+    if (source.status === 'missing') continue
+    const line = describeSource(source, inventory!)
+    if (source.id === 'homebrew') homebrew = line
+    else otherSources.push(line)
   }
 
   return {
@@ -36,8 +39,19 @@ export async function collectEnvironment(inventory: BrewInventory | null): Promi
     shell: userInfo().shell ?? '/bin/zsh',
     home: homedir(),
     homebrew,
+    otherSources,
     network
   }
+}
+
+/** e.g. "npm 11.12.1 at /opt/homebrew/bin/npm: 4 packages, 2 with updates available" */
+function describeSource(source: SourceReport, inventory: Inventory): string {
+  const isApps = source.id === 'apps' || source.id === 'appstore'
+  const name = `${source.label}${source.version ? ` ${source.version}` : ''}${source.path && !isApps ? ` at ${source.path}` : ''}`
+  if (source.status === 'error') return `${name}: installed, but its list could not be read`
+  const items = inventory.items.filter((i) => i.source === source.id)
+  const outdated = items.filter((i) => i.outdated).length
+  return `${name}: ${items.length} ${isApps ? 'apps' : 'packages'}${outdated ? `, ${outdated} with updates available` : ''}`
 }
 
 async function checkNetwork(): Promise<string> {

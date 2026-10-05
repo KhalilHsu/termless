@@ -1,11 +1,22 @@
-import { useMemo, useState } from 'react'
-import type { InstalledPackage } from '../../../shared/types'
+import { useEffect, useMemo, useState } from 'react'
+import type { InstalledItem, Inventory, ItemKind } from '../../../shared/types'
 import type { InventoryState } from '../App'
-import { useI18n } from '../i18n'
-import { ArrowUpRightIcon, BoxIcon, CheckIcon, SearchIcon, TerminalIcon } from '../icons'
+import { useI18n, type Key, type Translate } from '../i18n'
+import { AppIcon, ArrowUpRightIcon, BoxIcon, CheckIcon, SearchIcon, TerminalIcon } from '../icons'
+import { useHomebrewInstall } from '../useHomebrewInstall'
 import { ViewHeader } from './ViewHeader'
 
-type Filter = 'all' | 'formula' | 'cask' | 'updates'
+type Filter = 'all' | 'app' | 'cli' | 'updates'
+
+/** Source-specific facts worth showing, in this order. */
+const EXTRA_FACTS: { key: string; label: Key }[] = [
+  { key: 'tap', label: 'detail.tap' },
+  { key: 'origin', label: 'detail.origin' },
+  { key: 'module', label: 'detail.module' },
+  { key: 'python', label: 'detail.python' },
+  { key: 'category', label: 'detail.category' },
+  { key: 'bundleId', label: 'detail.bundleId' }
+]
 
 export function InstalledView({
   state,
@@ -21,29 +32,33 @@ export function InstalledView({
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const [source, setSource] = useState<string>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const packages = state.status === 'done' && state.inventory.ok ? state.inventory.packages : []
+  const inventory = state.status === 'done' ? state.inventory : null
+  const items = inventory?.items ?? []
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return packages.filter((p) => {
-      if (filter === 'formula' && p.kind !== 'formula') return false
-      if (filter === 'cask' && p.kind !== 'cask') return false
-      if (filter === 'updates' && !p.outdated) return false
+    return items.filter((i) => {
+      if (source !== 'all' && i.source !== source) return false
+      if (filter === 'app' && i.kind !== 'app') return false
+      if (filter === 'cli' && i.kind !== 'cli') return false
+      if (filter === 'updates' && !i.outdated) return false
       if (!q) return true
-      return [p.name, p.displayName, p.description ?? ''].some((s) => s.toLowerCase().includes(q))
+      return [i.name, i.displayName, i.description ?? '', i.sourceLabel].some((s) => s.toLowerCase().includes(q))
     })
-  }, [packages, query, filter])
+  }, [items, query, filter, source])
 
-  const selected = packages.find((p) => p.id === selectedId) ?? visible[0] ?? null
-  const updates = packages.filter((p) => p.outdated).length
+  const selected = items.find((i) => i.id === selectedId) ?? visible[0] ?? null
+  const updates = items.filter((i) => i.outdated).length
 
-  const selectByName = (name: string) => {
-    const target = packages.find((p) => p.name === name)
+  const selectByName = (name: string, fromSource: string) => {
+    const target = items.find((i) => i.name === name && i.source === fromSource)
     if (!target) return
     setQuery('')
     setFilter('all')
+    setSource('all')
     setSelectedId(target.id)
   }
 
@@ -56,13 +71,13 @@ export function InstalledView({
           value={query}
           placeholder={t('installed.search')}
           onChange={(e) => setQuery(e.target.value)}
-          disabled={packages.length === 0}
+          disabled={items.length === 0}
         />
       </label>
     </ViewHeader>
   )
 
-  if (state.status === 'loading') {
+  if (!inventory) {
     return (
       <div className="view">
         {header}
@@ -74,30 +89,13 @@ export function InstalledView({
     )
   }
 
-  if (!state.inventory.ok) {
-    const notInstalled = state.inventory.reason === 'not-installed'
-    return (
-      <div className="view">
-        {header}
-        <div className="empty-state">
-          <h2>{notInstalled ? t('installed.noBrew.title') : t('status.error')}</h2>
-          <p>{notInstalled ? t('installed.noBrew.body') : state.inventory.message}</p>
-          {!notInstalled && (
-            <button className="button" onClick={onRetry}>
-              {t('installed.retry')}
-            </button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
   const filters: { id: Filter; label: string }[] = [
     { id: 'all', label: t('installed.filter.all') },
-    { id: 'formula', label: t('installed.filter.formula') },
-    { id: 'cask', label: t('installed.filter.cask') },
+    { id: 'app', label: t('installed.filter.app') },
+    { id: 'cli', label: t('installed.filter.cli') },
     { id: 'updates', label: `${t('installed.filter.updates')} ${updates}` }
   ]
+  const shownSources = inventory.sources.filter((s) => s.status === 'ok' && s.count > 0)
 
   return (
     <div className="view">
@@ -105,8 +103,18 @@ export function InstalledView({
       <div className="split">
         <section className="list-pane">
           <div className="list-head">
-            <h2>{t('installed.heading')}</h2>
-            <p className="muted">{t('installed.count', { count: packages.length })}</p>
+            <div className="list-head-row">
+              <h2>{t('installed.heading')}</h2>
+              <select className="source-select" value={source} onChange={(e) => setSource(e.target.value)} aria-label={t('installed.source')}>
+                <option value="all">{t('installed.allSources', { count: shownSources.length })}</option>
+                {shownSources.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {sourceName(t, s.id, s.label)} ({s.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="muted">{t('installed.count', { count: items.length })}</p>
             <div className="segmented" role="tablist">
               {filters.map((f) => (
                 <button
@@ -120,38 +128,38 @@ export function InstalledView({
                 </button>
               ))}
             </div>
+            <SourceNotices inventory={inventory} onRetry={onRetry} />
           </div>
           <ul className="package-list">
-            {visible.length === 0 && <li className="list-empty muted">{t('installed.empty')}</li>}
-            {visible.map((p) => (
-              <li key={p.id}>
-                <button
-                  className={`package-row ${selected?.id === p.id ? 'is-selected' : ''}`}
-                  onClick={() => setSelectedId(p.id)}
-                >
-                  <PackageIcon kind={p.kind} />
+            {visible.length === 0 && <li className="list-empty muted">{t(items.length ? 'installed.empty' : 'installed.nothing')}</li>}
+            {visible.map((item) => (
+              <li key={item.id}>
+                <button className={`package-row ${selected?.id === item.id ? 'is-selected' : ''}`} onClick={() => setSelectedId(item.id)}>
+                  <KindIcon kind={item.kind} />
                   <div className="package-row-body">
                     <div className="package-row-title">
-                      <span className="package-name">{p.displayName}</span>
-                      <KindBadge pkg={p} />
-                      {p.outdated ? (
+                      <span className="package-name">{item.displayName}</span>
+                      <SourceBadge item={item} />
+                      {item.outdated ? (
                         <span className="badge badge-outline">{t('badge.outdated')}</span>
-                      ) : (
+                      ) : item.latestVersion ? (
                         <span className="badge-check" title={t('badge.upToDate')}>
                           <CheckIcon size={12} />
                         </span>
-                      )}
-                    </div>
-                    <p className="package-desc">{p.description ?? t('detail.noDescription')}</p>
-                    <p className="package-version">
-                      v{p.installedVersion}
-                      {p.outdated && p.latestVersion ? (
-                        <>
-                          {' → '}
-                          <span className="accent">v{p.latestVersion}</span>
-                        </>
                       ) : null}
-                    </p>
+                    </div>
+                    <p className="package-desc">{item.description ?? t(`kind.${item.kind}`)}</p>
+                    {item.version && (
+                      <p className="package-version">
+                        v{item.version}
+                        {item.outdated && item.latestVersion ? (
+                          <>
+                            {' → '}
+                            <span className="accent">v{item.latestVersion}</span>
+                          </>
+                        ) : null}
+                      </p>
+                    )}
                   </div>
                 </button>
               </li>
@@ -161,7 +169,7 @@ export function InstalledView({
 
         <section className="detail-pane">
           {selected ? (
-            <PackageDetail pkg={selected} onSelectName={selectByName} onAsk={onAsk} assistantBusy={assistantBusy} />
+            <ItemDetail item={selected} onSelectName={selectByName} onAsk={onAsk} assistantBusy={assistantBusy} />
           ) : (
             <div className="empty-state">
               <p>{t('installed.select')}</p>
@@ -173,71 +181,141 @@ export function InstalledView({
   )
 }
 
-function PackageIcon({ kind, large }: { kind: InstalledPackage['kind']; large?: boolean }) {
+/** Problems with individual sources, and an offer to install Homebrew when it is missing. */
+function SourceNotices({ inventory, onRetry }: { inventory: Inventory; onRetry: () => void }) {
+  const { t } = useI18n()
+  const homebrew = inventory.sources.find((s) => s.id === 'homebrew')
+  const failed = inventory.sources.filter((s) => s.status === 'error')
+  const install = useHomebrewInstall(onRetry)
+
+  return (
+    <>
+      {failed.map((s) => (
+        <p key={s.id} className="notice is-error source-notice">
+          {t('installed.sourceFailed', { source: s.label })}
+          <span className="source-notice-detail">{s.error}</span>
+          <button className="link" onClick={onRetry}>
+            {t('installed.retry')}
+          </button>
+        </p>
+      ))}
+      {homebrew?.status === 'missing' && (
+        <div className="notice source-notice">
+          {install.status ?? t('installed.noBrew')}
+          {!install.busy && (
+            <button className="link" onClick={() => void install.start()}>
+              {t('brewInstall.button')}
+            </button>
+          )}
+          {install.error && <span className="source-notice-detail">{t('setup.failed', { message: install.error })}</span>}
+        </div>
+      )}
+    </>
+  )
+}
+
+function KindIcon({ kind, large }: { kind: ItemKind; large?: boolean }) {
+  const size = large ? 26 : 18
   return (
     <span className={`package-icon is-${kind} ${large ? 'is-large' : ''}`}>
-      <BoxIcon size={large ? 26 : 18} />
+      {kind === 'app' ? <AppIcon size={size} /> : kind === 'cli' ? <TerminalIcon size={size} /> : <BoxIcon size={size} />}
     </span>
   )
 }
 
-function KindBadge({ pkg }: { pkg: InstalledPackage }) {
+function SourceBadge({ item }: { item: InstalledItem }) {
   const { t } = useI18n()
-  return <span className={`badge badge-${pkg.kind}`}>{t(pkg.kind === 'formula' ? 'kind.formula' : 'kind.cask')}</span>
+  return <span className={`badge badge-source is-${item.kind}`}>{sourceName(t, item.source, item.sourceLabel)}</span>
 }
 
-function PackageDetail({
-  pkg,
+function sourceName(t: Translate, id: string, label: string): string {
+  return id === 'apps' ? t('source.apps') : label
+}
+
+function ItemDetail({
+  item,
   onSelectName,
   onAsk,
   assistantBusy
 }: {
-  pkg: InstalledPackage
-  onSelectName: (name: string) => void
+  item: InstalledItem
+  onSelectName: (name: string, source: string) => void
   onAsk: (prompt: string) => void
   assistantBusy: boolean
 }) {
   const { t } = useI18n()
-  const promptVars = { name: pkg.displayName, kind: t(pkg.kind === 'formula' ? 'kind.formula' : 'kind.cask'), id: pkg.name }
+  const source = sourceName(t, item.source, item.sourceLabel)
+  const promptVars = { name: item.displayName, kind: t(`kind.${item.kind}`), id: item.name, source }
+  const hasDependencyInfo = item.source === 'homebrew' || item.dependencies.length > 0 || item.dependents.length > 0
+  const shownCommand = item.outdated && item.commands.upgrade ? item.commands.upgrade : item.commands.uninstall
 
   return (
-    <div className="detail" key={pkg.id}>
+    <div className="detail" key={item.id}>
       <div className="detail-head">
-        <PackageIcon kind={pkg.kind} large />
+        <KindIcon kind={item.kind} large />
         <div>
           <div className="detail-title">
-            <h2>{pkg.displayName}</h2>
-            <KindBadge pkg={pkg} />
-            {pkg.outdated && <span className="badge badge-outline">{t('badge.outdated')}</span>}
-            {!pkg.installedOnRequest && <span className="badge badge-outline">{t('badge.dependency')}</span>}
+            <h2>{item.displayName}</h2>
+            <SourceBadge item={item} />
+            {item.outdated && <span className="badge badge-outline">{t('badge.outdated')}</span>}
+            {!item.installedOnRequest && <span className="badge badge-outline">{t('badge.dependency')}</span>}
           </div>
-          <p className="muted">{pkg.description ?? t('detail.noDescription')}</p>
+          <p className="muted">{item.description ?? t('detail.noDescription')}</p>
         </div>
       </div>
 
       <DetailSection title={t('detail.details')}>
         <dl className="facts">
-          <dt>{t('detail.installed')}</dt>
-          <dd className={pkg.outdated ? 'accent strong' : ''}>{pkg.installedVersion}</dd>
-          {pkg.latestVersion && (
+          <dt>{t('detail.kind')}</dt>
+          <dd>{t(`kind.${item.kind}`)}</dd>
+          <dt>{t('detail.installedWith')}</dt>
+          <dd>{source}</dd>
+          {item.version && (
+            <>
+              <dt>{t('detail.installed')}</dt>
+              <dd className={item.outdated ? 'accent strong' : ''}>{item.version}</dd>
+            </>
+          )}
+          {item.latestVersion && (
             <>
               <dt>{t('detail.latest')}</dt>
-              <dd>{pkg.latestVersion}</dd>
+              <dd>{item.latestVersion}</dd>
             </>
           )}
-          {pkg.tap && (
+          {item.location && (
             <>
-              <dt>{t('detail.source')}</dt>
-              <dd>{pkg.tap}</dd>
+              <dt>{t('detail.size')}</dt>
+              <dd>
+                <ItemSize id={item.id} />
+              </dd>
             </>
           )}
-          {pkg.homepage && (
+          {item.executables.length > 0 && (
+            <>
+              <dt>{t('detail.commands')}</dt>
+              <dd className="mono">{item.executables.join(', ')}</dd>
+            </>
+          )}
+          {EXTRA_FACTS.filter((f) => item.extra[f.key]).map((f) => (
+            <FactRow key={f.key} label={t(f.label)} value={item.extra[f.key]} />
+          ))}
+          {item.homepage && (
             <>
               <dt>{t('detail.homepage')}</dt>
               <dd>
-                <button className="link" onClick={() => window.termless.openExternal(pkg.homepage!)}>
-                  {hostOf(pkg.homepage)}
+                <button className="link" onClick={() => window.termless.openExternal(item.homepage!)}>
+                  {hostOf(item.homepage)}
                   <ArrowUpRightIcon size={13} />
+                </button>
+              </dd>
+            </>
+          )}
+          {item.location && (
+            <>
+              <dt>{t('detail.location')}</dt>
+              <dd>
+                <button className="link" onClick={() => void window.termless.revealItem(item.id)}>
+                  {t('detail.showInFinder')}
                 </button>
               </dd>
             </>
@@ -245,35 +323,76 @@ function PackageDetail({
         </dl>
       </DetailSection>
 
-      <DetailSection title={t('detail.dependencies')}>
-        <NameChips names={pkg.dependencies} empty={t('detail.noDependencies')} onSelect={onSelectName} />
-      </DetailSection>
-
-      <DetailSection title={t('detail.dependents')}>
-        <NameChips names={pkg.dependents} empty={t('detail.noDependents')} onSelect={onSelectName} />
-      </DetailSection>
+      {hasDependencyInfo && (
+        <>
+          <DetailSection title={t('detail.dependencies')}>
+            <NameChips names={item.dependencies} empty={t('detail.noDependencies')} onSelect={(n) => onSelectName(n, item.source)} />
+          </DetailSection>
+          <DetailSection title={t('detail.dependents')}>
+            <NameChips names={item.dependents} empty={t('detail.noDependents')} onSelect={(n) => onSelectName(n, item.source)} />
+          </DetailSection>
+        </>
+      )}
 
       <DetailSection title={t('detail.actions')}>
         <div className="actions">
-          {pkg.outdated && pkg.latestVersion && (
+          {item.outdated && item.commands.upgrade && (
             <button className="button button-primary" disabled={assistantBusy} onClick={() => onAsk(t('prompt.upgrade', promptVars))}>
-              {t('detail.upgrade', { version: pkg.latestVersion })}
+              {item.latestVersion ? t('detail.upgrade', { version: item.latestVersion }) : t('detail.upgradeNoVersion')}
             </button>
           )}
-          <button className="button" disabled={assistantBusy} onClick={() => onAsk(t('prompt.uninstall', promptVars))}>
-            {t('detail.uninstall')}
-          </button>
+          {item.commands.uninstall && (
+            <button className="button" disabled={assistantBusy} onClick={() => onAsk(t('prompt.uninstall', promptVars))}>
+              {item.kind === 'app' ? t('detail.moveToTrash') : t('detail.uninstall')}
+            </button>
+          )}
           <button className="button" disabled={assistantBusy} onClick={() => onAsk(t('prompt.useIt', promptVars))}>
             {t('detail.useIt')}
           </button>
         </div>
         <p className="muted small">{t('detail.actionsHint')}</p>
-        <CommandDisclosure
-          command={pkg.outdated ? upgradeCommand(pkg) : uninstallCommand(pkg)}
-        />
+        {shownCommand && <CommandDisclosure command={shownCommand.display} />}
       </DetailSection>
     </div>
   )
+}
+
+function FactRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </>
+  )
+}
+
+/** Measured when the item is opened; big apps take a moment. */
+function ItemSize({ id }: { id: string }) {
+  const { t, lang } = useI18n()
+  const [size, setSize] = useState<number | null | undefined>(undefined)
+  useEffect(() => {
+    let current = true
+    setSize(undefined)
+    window.termless.getItemSize(id).then((bytes) => current && setSize(bytes))
+    return () => {
+      current = false
+    }
+  }, [id])
+  if (size === undefined) return <span className="muted">{t('detail.measuring')}</span>
+  if (size === null) return <span className="muted">{t('detail.unknown')}</span>
+  return <>{formatBytes(size, lang)}</>
+}
+
+function formatBytes(bytes: number, lang: string): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit++
+  }
+  const digits = value >= 100 || unit === 0 ? 0 : 1
+  return `${value.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { maximumFractionDigits: digits })} ${units[unit]}`
 }
 
 function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -331,14 +450,6 @@ function CommandDisclosure({ command }: { command: string }) {
       )}
     </div>
   )
-}
-
-function upgradeCommand(pkg: InstalledPackage): string {
-  return pkg.kind === 'cask' ? `brew upgrade --cask ${pkg.name}` : `brew upgrade ${pkg.name}`
-}
-
-function uninstallCommand(pkg: InstalledPackage): string {
-  return pkg.kind === 'cask' ? `brew uninstall --cask ${pkg.name}` : `brew uninstall ${pkg.name}`
 }
 
 function hostOf(url: string): string {

@@ -1,33 +1,26 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ApprovalDecision, BrewInventory, Lang } from '../shared/types'
+import { loadShellPath } from '../hostkit'
+import type { ApprovalDecision, Lang } from '../shared/types'
 import { ConversationStore } from './agent/conversations'
 import { MemoryStore } from './agent/memory'
 import { AgentSession } from './agent/session'
-import { loadInventory } from './brew'
 import { getCodexStatus, setCodexHome } from './codex/detect'
-import { getSetupStatus, installCodex, signInToCodex } from './setup'
+import { getInventory, getItemLocation, getItemSize, invalidateInventory } from './inventory'
+import { getSetupStatus, installCodex, installHomebrew, openCommandLineToolsInstaller, signInToCodex } from './setup'
 
 // Development / testing: keep Termless's data somewhere else.
 if (process.env.TERMLESS_USER_DATA) app.setPath('userData', process.env.TERMLESS_USER_DATA)
 
 setCodexHome(join(app.getPath('userData'), 'codex-home'))
 
-const INVENTORY_TTL_MS = 60_000
+// Apps opened from Finder don't get the user's shell PATH; ask the login
+// shell once so tools from nvm, asdf etc. are found. Everything that runs a
+// program waits for this.
+const shellPathReady = loadShellPath().catch(() => [])
 
 let mainWindow: BrowserWindow | null = null
-
-// --- Inventory cache (shared by the Installed tab and the agent's tools) ----
-
-let inventoryCache: { at: number; value: Promise<BrewInventory> } | null = null
-
-function getInventory(fresh = false): Promise<BrewInventory> {
-  if (fresh || !inventoryCache || Date.now() - inventoryCache.at > INVENTORY_TTL_MS) {
-    inventoryCache = { at: Date.now(), value: loadInventory() }
-  }
-  return inventoryCache.value
-}
 
 // --- Agent --------------------------------------------------------------------
 
@@ -36,7 +29,7 @@ const conversations = new ConversationStore(join(app.getPath('userData'), 'conve
 const agent = new AgentSession({
   memory,
   conversations,
-  getInventory: () => getInventory(),
+  getInventory: () => shellPathReady.then(() => getInventory()),
   workspaceDir: join(app.getPath('userData'), 'workspace'),
   appVersion: app.getVersion()
 })
@@ -45,7 +38,7 @@ agent.on('state', (state) => mainWindow?.webContents.send('agent:state', state))
 agent.on('conversations', (list) => mainWindow?.webContents.send('conversations:changed', list))
 agent.on('turn-completed', () => {
   // Commands may have installed or removed software.
-  inventoryCache = null
+  invalidateInventory()
   mainWindow?.webContents.send('inventory:changed')
 })
 
@@ -118,16 +111,32 @@ function createWindow(): BrowserWindow {
 
 const isLang = (value: unknown): value is Lang => value === 'en' || value === 'zh'
 
-ipcMain.handle('inventory:get', () => getInventory(true))
-ipcMain.handle('codex:status', () => getCodexStatus())
+ipcMain.handle('inventory:get', () => shellPathReady.then(() => getInventory(true)))
+ipcMain.handle('inventory:size', (_event, id: unknown) => (typeof id === 'string' ? getItemSize(id) : null))
+ipcMain.handle('inventory:reveal', async (_event, id: unknown) => {
+  const location = typeof id === 'string' ? await getItemLocation(id) : null
+  if (location) shell.showItemInFolder(location)
+})
+ipcMain.handle('codex:status', () => shellPathReady.then(() => getCodexStatus()))
 ipcMain.handle('shell:openExternal', (_event, url: unknown) => {
   if (typeof url === 'string' && isWebUrl(url)) return shell.openExternal(url)
   return undefined
 })
 
-ipcMain.handle('setup:status', () => getSetupStatus())
+ipcMain.handle('setup:status', () => shellPathReady.then(() => getSetupStatus()))
 ipcMain.handle('setup:installCodex', (_event, lang: unknown) => installCodex(mainWindow, isLang(lang) ? lang : 'en'))
 ipcMain.handle('setup:signIn', () => signInToCodex())
+ipcMain.handle('setup:installHomebrew', async (_event, lang: unknown) => {
+  const result = await installHomebrew(mainWindow, isLang(lang) ? lang : 'en', (progress) =>
+    mainWindow?.webContents.send('setup:progress', progress)
+  )
+  if (result.ok) {
+    invalidateInventory()
+    mainWindow?.webContents.send('inventory:changed')
+  }
+  return result
+})
+ipcMain.handle('setup:openCommandLineTools', () => openCommandLineToolsInstaller())
 
 ipcMain.handle('agent:state', () => agent.getState())
 ipcMain.handle('agent:send', (_event, text: unknown, lang: unknown) => {
